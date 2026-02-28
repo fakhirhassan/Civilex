@@ -140,6 +140,18 @@ export function useCases() {
         details: { case_type: caseData.case_type, title: caseData.title },
       });
 
+      // Notify assigned lawyer about new case
+      if (caseData.lawyer_id) {
+        await supabase.from("notifications").insert({
+          user_id: caseData.lawyer_id,
+          title: "New Case Assignment",
+          message: `You have been assigned to case "${caseData.title}". Please review and respond.`,
+          type: "case_assigned",
+          reference_type: "case",
+          reference_id: newCase.id,
+        });
+      }
+
       await fetchCases();
       return { error: null, data: newCase as Case };
     } catch (err) {
@@ -192,12 +204,500 @@ export function useCases() {
     }
   };
 
+  const acceptCase = async (
+    assignmentId: string,
+    caseId: string,
+    feeAmount: number,
+    allowInstallments: boolean,
+    installmentCount: number
+  ) => {
+    if (!user) return { error: "Not authenticated" };
+
+    try {
+      const supabase = createClient();
+
+      // Update assignment
+      const { error: assignError } = await supabase
+        .from("case_assignments")
+        .update({
+          status: "accepted",
+          fee_amount: feeAmount,
+          allow_installments: allowInstallments,
+          installment_count: installmentCount,
+          responded_at: new Date().toISOString(),
+        })
+        .eq("id", assignmentId);
+
+      if (assignError) return { error: assignError.message };
+
+      // Get plaintiff id for payment
+      const { data: caseRow } = await supabase
+        .from("cases")
+        .select("plaintiff_id")
+        .eq("id", caseId)
+        .single();
+
+      // Transition case to payment_pending
+      const { error: caseError } = await supabase
+        .from("cases")
+        .update({ status: "payment_pending" })
+        .eq("id", caseId);
+
+      if (caseError) return { error: caseError.message };
+
+      // Create payment records
+      if (allowInstallments && installmentCount > 1) {
+        const installmentAmount = Math.ceil(feeAmount / installmentCount);
+        const { data: firstPayment } = await supabase
+          .from("payments")
+          .insert({
+            case_id: caseId,
+            payer_id: caseRow?.plaintiff_id,
+            receiver_id: user.id,
+            amount: installmentAmount,
+            payment_type: "lawyer_fee",
+            status: "pending",
+            is_installment: true,
+            installment_number: 1,
+            total_installments: installmentCount,
+            description: `Lawyer fee installment 1 of ${installmentCount}`,
+          })
+          .select()
+          .single();
+
+        if (firstPayment) {
+          for (let i = 2; i <= installmentCount; i++) {
+            await supabase.from("payments").insert({
+              case_id: caseId,
+              payer_id: caseRow?.plaintiff_id,
+              receiver_id: user.id,
+              amount: i === installmentCount
+                ? feeAmount - installmentAmount * (installmentCount - 1)
+                : installmentAmount,
+              payment_type: "lawyer_fee",
+              status: "pending",
+              is_installment: true,
+              installment_number: i,
+              total_installments: installmentCount,
+              parent_payment_id: firstPayment.id,
+              description: `Lawyer fee installment ${i} of ${installmentCount}`,
+            });
+          }
+        }
+      } else {
+        await supabase.from("payments").insert({
+          case_id: caseId,
+          payer_id: caseRow?.plaintiff_id,
+          receiver_id: user.id,
+          amount: feeAmount,
+          payment_type: "lawyer_fee",
+          status: "pending",
+          description: "Lawyer fee",
+        });
+      }
+
+      // Log activity
+      await supabase.from("case_activity_log").insert({
+        case_id: caseId,
+        actor_id: user.id,
+        action: "lawyer_accepted",
+        details: { fee_amount: feeAmount, allow_installments: allowInstallments },
+      });
+
+      // Notify client that lawyer accepted and payment is pending
+      if (caseRow?.plaintiff_id) {
+        await supabase.from("notifications").insert({
+          user_id: caseRow.plaintiff_id,
+          title: "Lawyer Accepted Your Case",
+          message: `Your lawyer has accepted the case and set a fee of PKR ${feeAmount.toLocaleString()}. Please proceed with payment.`,
+          type: "case_accepted",
+          reference_type: "case",
+          reference_id: caseId,
+        });
+
+        await supabase.from("notifications").insert({
+          user_id: caseRow.plaintiff_id,
+          title: "Payment Pending",
+          message: `A payment of PKR ${feeAmount.toLocaleString()} is required for your case to proceed.`,
+          type: "payment_pending",
+          reference_type: "case",
+          reference_id: caseId,
+        });
+      }
+
+      await fetchCases();
+      return { error: null };
+    } catch (err) {
+      console.error("Error accepting case:", err);
+      return { error: "Failed to accept case" };
+    }
+  };
+
+  const declineCase = async (
+    assignmentId: string,
+    caseId: string,
+    reason: string
+  ) => {
+    if (!user) return { error: "Not authenticated" };
+
+    try {
+      const supabase = createClient();
+
+      const { error: assignError } = await supabase
+        .from("case_assignments")
+        .update({
+          status: "declined",
+          decline_reason: reason,
+          responded_at: new Date().toISOString(),
+        })
+        .eq("id", assignmentId);
+
+      if (assignError) return { error: assignError.message };
+
+      // Revert case to draft
+      await supabase
+        .from("cases")
+        .update({ status: "draft" })
+        .eq("id", caseId)
+        .eq("status", "pending_lawyer_acceptance");
+
+      // Log activity
+      await supabase.from("case_activity_log").insert({
+        case_id: caseId,
+        actor_id: user.id,
+        action: "lawyer_declined",
+        details: { reason },
+      });
+
+      // Get case info for notification
+      const { data: declinedCase } = await supabase
+        .from("cases")
+        .select("plaintiff_id, title")
+        .eq("id", caseId)
+        .single();
+
+      // Notify client that lawyer declined
+      if (declinedCase?.plaintiff_id) {
+        await supabase.from("notifications").insert({
+          user_id: declinedCase.plaintiff_id,
+          title: "Lawyer Declined Your Case",
+          message: `The lawyer has declined your case "${declinedCase.title}". Reason: ${reason}. You can assign a different lawyer.`,
+          type: "case_declined",
+          reference_type: "case",
+          reference_id: caseId,
+        });
+      }
+
+      await fetchCases();
+      return { error: null };
+    } catch (err) {
+      console.error("Error declining case:", err);
+      return { error: "Failed to decline case" };
+    }
+  };
+
+  const submitToAdmin = async (caseId: string) => {
+    if (!user) return { error: "Not authenticated" };
+
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase
+        .from("cases")
+        .update({ status: "submitted_to_admin" })
+        .eq("id", caseId)
+        .in("status", ["payment_confirmed", "drafting", "returned_for_revision"]);
+
+      if (error) return { error: error.message };
+
+      // Log activity
+      await supabase.from("case_activity_log").insert({
+        case_id: caseId,
+        actor_id: user.id,
+        action: "submitted_to_admin",
+        details: {},
+      });
+
+      // Notify admin court users
+      const { data: adminUsers } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("role", "admin_court");
+
+      const { data: caseRow } = await supabase
+        .from("cases")
+        .select("title, case_number")
+        .eq("id", caseId)
+        .single();
+
+      if (adminUsers) {
+        for (const admin of adminUsers) {
+          await supabase.from("notifications").insert({
+            user_id: admin.id,
+            title: "New Case for Scrutiny",
+            message: `Case "${caseRow?.title}" (${caseRow?.case_number}) has been submitted for scrutiny.`,
+            type: "case_status_changed",
+            reference_type: "case",
+            reference_id: caseId,
+          });
+        }
+      }
+
+      await fetchCases();
+      return { error: null };
+    } catch (err) {
+      console.error("Error submitting to admin:", err);
+      return { error: "Failed to submit to admin court" };
+    }
+  };
+
+  const startDrafting = async (caseId: string) => {
+    if (!user) return { error: "Not authenticated" };
+
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase
+        .from("cases")
+        .update({ status: "drafting" })
+        .eq("id", caseId)
+        .eq("status", "payment_confirmed");
+
+      if (error) return { error: error.message };
+
+      await supabase.from("case_activity_log").insert({
+        case_id: caseId,
+        actor_id: user.id,
+        action: "drafting_started",
+        details: {},
+      });
+
+      await fetchCases();
+      return { error: null };
+    } catch (err) {
+      console.error("Error starting drafting:", err);
+      return { error: "Failed to start drafting" };
+    }
+  };
+
+  const issueSummon = async (caseId: string, defendantName: string) => {
+    if (!user) return { error: "Not authenticated" };
+
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase
+        .from("cases")
+        .update({ status: "summon_issued" })
+        .eq("id", caseId)
+        .eq("status", "registered");
+
+      if (error) return { error: error.message };
+
+      // Log activity
+      await supabase.from("case_activity_log").insert({
+        case_id: caseId,
+        actor_id: user.id,
+        action: "summon_issued",
+        details: { defendant: defendantName },
+      });
+
+      // Notify defendant
+      const { data: caseRow } = await supabase
+        .from("cases")
+        .select("defendant_id, title")
+        .eq("id", caseId)
+        .single();
+
+      if (caseRow?.defendant_id) {
+        await supabase.from("notifications").insert({
+          user_id: caseRow.defendant_id,
+          title: "Court Summon Issued",
+          message: `You have been summoned in case "${caseRow.title}". Please respond within the given time.`,
+          type: "case_status_changed",
+          reference_type: "case",
+          reference_id: caseId,
+        });
+      }
+
+      await fetchCases();
+      return { error: null };
+    } catch (err) {
+      console.error("Error issuing summon:", err);
+      return { error: "Failed to issue summon" };
+    }
+  };
+
+  const updateCriminalDetails = async (
+    caseId: string,
+    updates: Record<string, unknown>
+  ) => {
+    if (!user) return { error: "Not authenticated" };
+
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase
+        .from("criminal_case_details")
+        .update(updates)
+        .eq("case_id", caseId);
+
+      if (error) return { error: error.message };
+
+      await supabase.from("case_activity_log").insert({
+        case_id: caseId,
+        actor_id: user.id,
+        action: "criminal_details_updated",
+        details: updates,
+      });
+
+      return { error: null };
+    } catch (err) {
+      console.error("Error updating criminal details:", err);
+      return { error: "Failed to update criminal details" };
+    }
+  };
+
+  const submitChallan = async (caseId: string) => {
+    if (!user) return { error: "Not authenticated" };
+
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase
+        .from("criminal_case_details")
+        .update({
+          challan_submitted: true,
+          challan_date: new Date().toISOString(),
+          investigation_status: "completed",
+        })
+        .eq("case_id", caseId);
+
+      if (error) return { error: error.message };
+
+      await supabase.from("case_activity_log").insert({
+        case_id: caseId,
+        actor_id: user.id,
+        action: "challan_submitted",
+        details: {},
+      });
+
+      // Notify magistrate
+      const { data: magistrates } = await supabase
+        .from("profiles")
+        .select("id")
+        .in("role", ["magistrate", "admin_court"]);
+
+      const { data: caseRow } = await supabase
+        .from("cases")
+        .select("title, case_number")
+        .eq("id", caseId)
+        .single();
+
+      if (magistrates) {
+        for (const m of magistrates) {
+          await supabase.from("notifications").insert({
+            user_id: m.id,
+            title: "Challan Submitted",
+            message: `Challan has been submitted for case "${caseRow?.title}" (${caseRow?.case_number}). Investigation is complete.`,
+            type: "case_status_changed",
+            reference_type: "case",
+            reference_id: caseId,
+          });
+        }
+      }
+
+      await fetchCases();
+      return { error: null };
+    } catch (err) {
+      console.error("Error submitting challan:", err);
+      return { error: "Failed to submit challan" };
+    }
+  };
+
+  const updateCaseStatus = async (
+    caseId: string,
+    newStatus: string,
+    currentStatus: string
+  ) => {
+    if (!user) return { error: "Not authenticated" };
+
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase
+        .from("cases")
+        .update({ status: newStatus })
+        .eq("id", caseId)
+        .eq("status", currentStatus);
+
+      if (error) return { error: error.message };
+
+      await supabase.from("case_activity_log").insert({
+        case_id: caseId,
+        actor_id: user.id,
+        action: "status_changed",
+        details: { new_status: newStatus, old_status: currentStatus },
+      });
+
+      // Notify all parties
+      const { data: caseRow } = await supabase
+        .from("cases")
+        .select("plaintiff_id, defendant_id, title")
+        .eq("id", caseId)
+        .single();
+
+      const partyIds: string[] = [];
+      if (caseRow?.plaintiff_id) partyIds.push(caseRow.plaintiff_id);
+      if (caseRow?.defendant_id) partyIds.push(caseRow.defendant_id);
+
+      const { data: assignments } = await supabase
+        .from("case_assignments")
+        .select("lawyer_id")
+        .eq("case_id", caseId)
+        .eq("status", "accepted");
+
+      if (assignments) {
+        for (const a of assignments) {
+          if (!partyIds.includes(a.lawyer_id)) partyIds.push(a.lawyer_id);
+        }
+      }
+
+      for (const pid of partyIds) {
+        if (pid !== user.id) {
+          await supabase.from("notifications").insert({
+            user_id: pid,
+            title: "Case Status Updated",
+            message: `Case "${caseRow?.title}" status has been updated to "${newStatus.replace(/_/g, " ")}".`,
+            type: "case_status_changed",
+            reference_type: "case",
+            reference_id: caseId,
+          });
+        }
+      }
+
+      await fetchCases();
+      return { error: null };
+    } catch (err) {
+      console.error("Error updating case status:", err);
+      return { error: "Failed to update case status" };
+    }
+  };
+
   return {
     cases,
     isLoading,
     fetchCases,
     createCase,
     uploadDocument,
+    acceptCase,
+    declineCase,
+    submitToAdmin,
+    startDrafting,
+    issueSummon,
+    updateCaseStatus,
+    updateCriminalDetails,
+    submitChallan,
   };
 }
 

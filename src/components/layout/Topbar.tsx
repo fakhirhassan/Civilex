@@ -1,7 +1,8 @@
 "use client";
 
-import { Bell, MessageSquare, User, Menu } from "lucide-react";
+import { MessageSquare, User, Menu } from "lucide-react";
 import Link from "next/link";
+import NotificationBell from "@/components/features/notifications/NotificationBell";
 
 interface TopbarProps {
   title: string;
@@ -33,13 +34,7 @@ export default function Topbar({ title, onMenuToggle }: TopbarProps) {
         <button className="rounded-lg p-2 text-muted hover:bg-cream-dark hover:text-foreground transition-colors">
           <MessageSquare className="h-5 w-5" />
         </button>
-        <Link
-          href="/notifications"
-          className="relative rounded-lg p-2 text-muted hover:bg-cream-dark hover:text-foreground transition-colors"
-        >
-          <Bell className="h-5 w-5" />
-          {/* Notification dot - will be dynamic later */}
-        </Link>
+        <NotificationBell />
       </div>
     </header>
   );

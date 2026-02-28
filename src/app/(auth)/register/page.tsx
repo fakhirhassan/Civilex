@@ -87,10 +87,9 @@ export default function RegisterPage() {
       return;
     }
 
-    // If lawyer, create lawyer profile after a brief delay for the trigger
+    // If lawyer, create lawyer profile
+    // createLawyerProfile fetches the auth user directly, no delay needed
     if (isLawyer) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
       const { error: lawyerError } = await createLawyerProfile({
         bar_license_number: formData.barLicenseNumber,
         specialization: formData.specialization,

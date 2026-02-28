@@ -12,7 +12,9 @@ import {
   CreditCard,
   Settings,
   Bot,
+  Bell,
   ClipboardCheck,
+  Gavel,
   type LucideIcon,
 } from "lucide-react";
 
@@ -23,7 +25,9 @@ const iconMap: Record<string, LucideIcon> = {
   CreditCard,
   Settings,
   Bot,
+  Bell,
   ClipboardCheck,
+  Gavel,
 };
 
 interface SidebarProps {

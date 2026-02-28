@@ -139,13 +139,21 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     metadata: { full_name: string; role: string }
   ) => {
     if (!supabase) return { error: "Supabase not configured" };
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         data: metadata,
       },
     });
+
+    // If signup succeeded and user is auto-confirmed, fetch their profile
+    if (!error && data.user && data.session) {
+      // Wait briefly for the database trigger to create the profile
+      await new Promise((r) => setTimeout(r, 500));
+      await fetchProfile(data.user);
+    }
+
     return { error: error?.message ?? null };
   };
 
@@ -196,18 +204,35 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     data: Omit<LawyerProfile, "id" | "created_at" | "rating" | "total_reviews">
   ) => {
     if (!supabase) return { error: "Supabase not configured" };
-    if (!state.user) return { error: "Not authenticated" };
 
-    const { error } = await supabase.from("lawyer_profiles").insert({
-      id: state.user.id,
-      ...data,
-    });
+    // Get the current auth user directly — don't rely on state.user
+    // because after signUp the state may not have updated yet
+    const {
+      data: { user: authUser },
+    } = await supabase.auth.getUser();
 
-    if (!error) {
-      await refreshProfile();
+    if (!authUser) return { error: "Not authenticated" };
+
+    // Use server API route with admin client to bypass RLS issues
+    // that can occur right after signup when session isn't fully established
+    try {
+      const res = await fetch("/api/lawyers/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: authUser.id, ...data }),
+      });
+
+      const result = await res.json();
+
+      if (!res.ok) {
+        return { error: result.error || "Failed to create lawyer profile" };
+      }
+
+      await fetchProfile(authUser);
+      return { error: null };
+    } catch (err) {
+      return { error: "Failed to create lawyer profile" };
     }
-
-    return { error: error?.message ?? null };
   };
 
   return (
