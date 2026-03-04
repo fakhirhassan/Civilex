@@ -26,8 +26,8 @@ export function useInvestigation(caseId: string) {
         .from("investigation_reports")
         .select(`
           *,
-          submitter:profiles!investigation_reports_submitted_by_fkey(id, full_name),
-          reviewer:profiles!investigation_reports_reviewed_by_fkey(id, full_name)
+          submitter:profiles!submitted_by(id, full_name),
+          reviewer:profiles!reviewed_by(id, full_name)
         `)
         .eq("case_id", caseId)
         .order("created_at", { ascending: false });

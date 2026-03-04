@@ -30,8 +30,8 @@ export function useEvidence(caseId: string) {
         .from("evidence_records")
         .select(
           `*,
-          submitted_by_profile:profiles!evidence_records_submitted_by_fkey(full_name),
-          document:documents!evidence_records_document_id_fkey(title, file_name, file_path)`
+          submitted_by_profile:profiles!submitted_by(full_name),
+          document:documents!document_id(title, file_name, file_path)`
         )
         .eq("case_id", caseId)
         .order("created_at", { ascending: true });

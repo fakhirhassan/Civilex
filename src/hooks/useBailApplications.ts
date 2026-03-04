@@ -26,9 +26,9 @@ export function useBailApplications(caseId: string) {
         .from("bail_applications")
         .select(`
           *,
-          applicant:profiles!bail_applications_applicant_id_fkey(id, full_name, email),
-          lawyer:profiles!bail_applications_lawyer_id_fkey(id, full_name),
-          decided_by_profile:profiles!bail_applications_decided_by_fkey(id, full_name)
+          applicant:profiles!applicant_id(id, full_name, email),
+          lawyer:profiles!lawyer_id(id, full_name),
+          decided_by_profile:profiles!decided_by(id, full_name)
         `)
         .eq("case_id", caseId)
         .order("created_at", { ascending: false });

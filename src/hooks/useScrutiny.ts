@@ -21,7 +21,7 @@ export function useScrutinyQueue() {
         .from("cases")
         .select(`
           id, case_number, title, case_type, status, filing_date,
-          plaintiff:profiles!cases_plaintiff_id_fkey(id, full_name)
+          plaintiff:profiles!plaintiff_id(id, full_name)
         `)
         .in("status", ["submitted_to_admin", "under_scrutiny"])
         .order("created_at", { ascending: true });
@@ -61,7 +61,7 @@ export function useScrutiny(caseId: string) {
         .from("scrutiny_checklist")
         .select(`
           *,
-          reviewer:profiles!scrutiny_checklist_reviewed_by_fkey(id, full_name)
+          reviewer:profiles!reviewed_by(id, full_name)
         `)
         .eq("case_id", caseId)
         .order("created_at", { ascending: false })

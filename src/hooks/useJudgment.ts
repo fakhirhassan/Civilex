@@ -31,8 +31,8 @@ export function useJudgment(caseId: string) {
         .from("judgment_records")
         .select(
           `*,
-          delivered_by_profile:profiles!judgment_records_delivered_by_fkey(full_name),
-          hearing:hearings!judgment_records_hearing_id_fkey(hearing_number, scheduled_date)`
+          delivered_by_profile:profiles!delivered_by(full_name),
+          hearing:hearings!hearing_id(hearing_number, scheduled_date)`
         )
         .eq("case_id", caseId)
         .order("created_at", { ascending: false })

@@ -22,8 +22,8 @@ export function usePayments() {
         .select(`
           *,
           case:cases(id, case_number, title),
-          payer:profiles!payments_payer_id_fkey(id, full_name, email),
-          receiver:profiles!payments_receiver_id_fkey(id, full_name, email)
+          payer:profiles!payer_id(id, full_name, email),
+          receiver:profiles!receiver_id(id, full_name, email)
         `)
         .order("created_at", { ascending: false });
 

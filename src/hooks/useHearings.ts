@@ -27,10 +27,10 @@ export function useHearings(caseId: string) {
         .from("hearings")
         .select(`
           *,
-          presiding_officer:profiles!hearings_presiding_officer_id_fkey(id, full_name, email),
+          presiding_officer:profiles!presiding_officer_id(id, full_name, email),
           order_sheets(
             id, order_type, order_text, created_at,
-            issuer:profiles!order_sheets_issued_by_fkey(id, full_name)
+            issuer:profiles!issued_by(id, full_name)
           )
         `)
         .eq("case_id", caseId)

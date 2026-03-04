@@ -42,8 +42,8 @@ export function useWitnesses(caseId: string) {
         .from("witness_records")
         .select(
           `*,
-          added_by_profile:profiles!witness_records_added_by_fkey(full_name),
-          hearing:hearings!witness_records_hearing_id_fkey(hearing_number, scheduled_date)`
+          added_by_profile:profiles!added_by(full_name),
+          hearing:hearings!hearing_id(hearing_number, scheduled_date)`
         )
         .eq("case_id", caseId)
         .order("created_at", { ascending: true });

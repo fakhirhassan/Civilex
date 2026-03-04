@@ -21,11 +21,11 @@ export function useCases() {
         .from("cases")
         .select(`
           *,
-          plaintiff:profiles!cases_plaintiff_id_fkey(id, full_name, email),
-          defendant:profiles!cases_defendant_id_fkey(id, full_name, email),
+          plaintiff:profiles!plaintiff_id(id, full_name, email),
+          defendant:profiles!defendant_id(id, full_name, email),
           assignments:case_assignments(
             id, lawyer_id, side, status, fee_amount,
-            lawyer:profiles!case_assignments_lawyer_id_fkey(id, full_name, email)
+            lawyer:profiles!lawyer_id(id, full_name, email)
           )
         `)
         .order("created_at", { ascending: false });
@@ -718,21 +718,21 @@ export function useCase(caseId: string) {
         .from("cases")
         .select(`
           *,
-          plaintiff:profiles!cases_plaintiff_id_fkey(id, full_name, email),
-          defendant:profiles!cases_defendant_id_fkey(id, full_name, email),
+          plaintiff:profiles!plaintiff_id(id, full_name, email),
+          defendant:profiles!defendant_id(id, full_name, email),
           assignments:case_assignments(
             id, lawyer_id, client_id, side, status, fee_amount, allow_installments, installment_count, decline_reason, assigned_at, responded_at,
-            lawyer:profiles!case_assignments_lawyer_id_fkey(id, full_name, email)
+            lawyer:profiles!lawyer_id(id, full_name, email)
           ),
           criminal_details:criminal_case_details(*)
         `)
         .eq("id", caseId)
-        .single();
+        .maybeSingle();
 
       if (error) {
-        console.error("Error fetching case:", error);
+        console.error("Error fetching case:", error.message, error.code);
       } else {
-        setCaseData(data as CaseWithRelations);
+        setCaseData((data as CaseWithRelations) ?? null);
       }
 
       // Fetch documents
