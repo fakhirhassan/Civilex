@@ -21,7 +21,8 @@ interface AuthContextType extends AuthState {
   ) => Promise<{ error: string | null }>;
   signIn: (
     email: string,
-    password: string
+    password: string,
+    role: string
   ) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -157,13 +158,28 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error?.message ?? null };
   };
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (email: string, password: string, role: string) => {
     if (!supabase) return { error: "Supabase not configured" };
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
-    return { error: error?.message ?? null };
+
+    if (error) return { error: error.message };
+
+    // Verify the selected role matches the user's actual role
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", data.user.id)
+      .single();
+
+    if (!profile || profile.role !== role) {
+      await supabase.auth.signOut();
+      return { error: "Invalid credentials for the selected role." };
+    }
+
+    return { error: null };
   };
 
   const signOut = async () => {

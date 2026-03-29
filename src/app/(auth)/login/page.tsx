@@ -41,7 +41,7 @@ export default function LoginPage() {
     }
 
     setIsLoading(true);
-    const { error } = await signIn(formData.email, formData.password);
+    const { error } = await signIn(formData.email, formData.password, formData.role);
 
     if (error) {
       setErrors({ form: error });
