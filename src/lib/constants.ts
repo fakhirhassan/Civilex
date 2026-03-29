@@ -23,6 +23,7 @@ export const ROLE_LABELS: Record<Role, string> = {
 export const CASE_TYPES = {
   CIVIL: "civil",
   CRIMINAL: "criminal",
+  FAMILY: "family",
 } as const;
 
 export type CaseType = (typeof CASE_TYPES)[keyof typeof CASE_TYPES];

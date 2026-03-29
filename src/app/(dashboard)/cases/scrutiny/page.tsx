@@ -125,9 +125,9 @@ export default function ScrutinyQueuePage() {
                       </h3>
                       <StatusBadge status={item.status as CaseStatus} />
                       <Badge
-                        variant={item.case_type === "civil" ? "primary" : "danger"}
+                        variant={item.case_type === "civil" ? "primary" : item.case_type === "family" ? "warning" : "danger"}
                       >
-                        {item.case_type === "civil" ? "Civil" : "Criminal"}
+                        {item.case_type === "civil" ? "Civil" : item.case_type === "family" ? "Family" : "Criminal"}
                       </Badge>
                     </div>
                     <div className="mt-2 flex flex-wrap gap-4 text-sm text-muted">

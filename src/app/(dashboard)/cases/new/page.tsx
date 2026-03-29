@@ -13,12 +13,13 @@ import Spinner from "@/components/ui/Spinner";
 import LawyerCard from "@/components/features/lawyers/LawyerCard";
 import { useCases } from "@/hooks/useCases";
 import { useLawyers } from "@/hooks/useLawyers";
-import { civilCaseSchema, criminalCaseSchema } from "@/lib/validations/case";
+import { civilCaseSchema, criminalCaseSchema, familyCaseSchema } from "@/lib/validations/case";
 import { ArrowLeft, ArrowRight, Check, Search } from "lucide-react";
 
 const caseTypeOptions = [
   { value: "civil", label: "Civil Case" },
   { value: "criminal", label: "Criminal Case" },
+  { value: "family", label: "Family Case" },
 ];
 
 const sensitivityOptions = [
@@ -47,7 +48,7 @@ function NewCaseForm() {
   const [submitError, setSubmitError] = useState("");
 
   // Form state
-  const [caseType, setCaseType] = useState<"civil" | "criminal">("civil");
+  const [caseType, setCaseType] = useState<"civil" | "criminal" | "family">("civil");
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -79,17 +80,28 @@ function NewCaseForm() {
     setErrors({});
 
     if (s === 1) {
-      const schema = isCriminal ? criminalCaseSchema : civilCaseSchema;
-      const data = isCriminal
-        ? {
-            ...formData,
-            case_type: "criminal" as const,
-            ...criminalData,
-          }
-        : {
-            ...formData,
-            case_type: "civil" as const,
-          };
+      const schema =
+        caseType === "criminal"
+          ? criminalCaseSchema
+          : caseType === "family"
+            ? familyCaseSchema
+            : civilCaseSchema;
+      const data =
+        caseType === "criminal"
+          ? {
+              ...formData,
+              case_type: "criminal" as const,
+              ...criminalData,
+            }
+          : caseType === "family"
+            ? {
+                ...formData,
+                case_type: "family" as const,
+              }
+            : {
+                ...formData,
+                case_type: "civil" as const,
+              };
       const result = schema.safeParse(data);
       if (!result.success) {
         const fieldErrors: Record<string, string> = {};
@@ -221,7 +233,7 @@ function NewCaseForm() {
                 options={caseTypeOptions}
                 value={caseType}
                 onChange={(e) =>
-                  setCaseType(e.target.value as "civil" | "criminal")
+                  setCaseType(e.target.value as "civil" | "criminal" | "family")
                 }
               />
               <Select

@@ -91,8 +91,8 @@ export async function POST(request: NextRequest) {
       success: true,
       signature_id: signature.id,
       expires_at: signature.otp_expires_at,
-      // For demo/FYP: include OTP in response so the user can enter it
-      demo_otp: otp,
+      // Only include OTP in development/demo mode — never in production
+      ...(process.env.NODE_ENV !== "production" ? { demo_otp: otp } : {}),
     });
   } catch (err) {
     console.error("OTP send error:", err);

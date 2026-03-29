@@ -86,7 +86,8 @@ export function useJudgment(caseId: string) {
             status: "judgment_delivered",
             disposal_date: new Date().toISOString(),
           })
-          .eq("id", caseId);
+          .eq("id", caseId)
+          .eq("status", "reserved_for_judgment");
 
         // Log activity
         await supabase.from("case_activity_log").insert({
@@ -121,12 +122,12 @@ export function useJudgment(caseId: string) {
           }
 
           for (const userId of notifyIds) {
-            if (!userId) continue;
+            if (!userId || userId === user.id) continue;
             await supabase.from("notifications").insert({
               user_id: userId,
               title: "Judgment Delivered",
               message: `Judgment has been delivered in case "${caseData.title}". Verdict: ${data.verdict}`,
-              type: "case_update",
+              type: "judgment_delivered",
               reference_id: caseId,
               reference_type: "case",
             });

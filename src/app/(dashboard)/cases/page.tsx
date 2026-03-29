@@ -35,8 +35,8 @@ export default function CasesPage() {
       key: "case_type",
       label: "Type",
       render: (item: CaseWithRelations) => (
-        <Badge variant={item.case_type === "civil" ? "primary" : "danger"}>
-          {item.case_type === "civil" ? "Civil" : "Criminal"}
+        <Badge variant={item.case_type === "civil" ? "primary" : item.case_type === "family" ? "warning" : "danger"}>
+          {item.case_type === "civil" ? "Civil" : item.case_type === "family" ? "Family" : "Criminal"}
         </Badge>
       ),
     },

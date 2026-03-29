@@ -59,6 +59,7 @@ export default function CaseDetailPage({
   const { hearings } = useHearings(caseId);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [isActionLoading, setIsActionLoading] = useState(false);
+  const [actionError, setActionError] = useState("");
 
   if (isLoading) {
     return (
@@ -140,20 +141,25 @@ export default function CaseDetailPage({
 
   const handleAction = async (action: () => Promise<{ error: string | null }>) => {
     setIsActionLoading(true);
+    setActionError("");
     const result = await action();
-    if (!result.error) await refreshCase();
+    if (result.error) {
+      setActionError(result.error);
+    } else {
+      await refreshCase();
+    }
     setIsActionLoading(false);
   };
 
   const statusSteps = [
     "draft",
     "pending_lawyer_acceptance",
-    "lawyer_accepted",
     "payment_pending",
     "payment_confirmed",
     "drafting",
     "submitted_to_admin",
     "under_scrutiny",
+    "returned_for_revision",
     "registered",
     "summon_issued",
     "preliminary_hearing",
@@ -164,6 +170,7 @@ export default function CaseDetailPage({
     "reserved_for_judgment",
     "judgment_delivered",
     "closed",
+    "disposed",
   ];
 
   const currentStepIndex = statusSteps.indexOf(caseData.status);
@@ -181,6 +188,12 @@ export default function CaseDetailPage({
           <ArrowLeft className="h-4 w-4" />
           Back to Cases
         </Link>
+
+        {actionError && (
+          <div className="mt-2 rounded-lg border border-danger bg-danger-light p-3 text-sm text-danger">
+            {actionError}
+          </div>
+        )}
 
         {/* Case header */}
         <Card className="mt-2">
@@ -200,10 +213,10 @@ export default function CaseDetailPage({
                 <span>
                   <Badge
                     variant={
-                      caseData.case_type === "civil" ? "primary" : "danger"
+                      caseData.case_type === "civil" ? "primary" : caseData.case_type === "family" ? "warning" : "danger"
                     }
                   >
-                    {caseData.case_type === "civil" ? "Civil" : "Criminal"}
+                    {caseData.case_type === "civil" ? "Civil" : caseData.case_type === "family" ? "Family" : "Criminal"}
                   </Badge>
                 </span>
                 {caseData.filing_date && (

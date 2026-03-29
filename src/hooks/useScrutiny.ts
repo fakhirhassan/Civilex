@@ -137,7 +137,8 @@ export function useScrutiny(caseId: string) {
             registration_date: new Date().toISOString(),
             admin_court_id: user.id,
           })
-          .eq("id", caseId);
+          .eq("id", caseId)
+          .in("status", ["submitted_to_admin", "under_scrutiny"]);
 
         // Log activity
         await supabase.from("case_activity_log").insert({
@@ -188,7 +189,8 @@ export function useScrutiny(caseId: string) {
         await supabase
           .from("cases")
           .update({ status: "returned_for_revision" })
-          .eq("id", caseId);
+          .eq("id", caseId)
+          .in("status", ["submitted_to_admin", "under_scrutiny"]);
 
         // Log activity
         await supabase.from("case_activity_log").insert({

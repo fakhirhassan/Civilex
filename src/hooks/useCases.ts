@@ -35,16 +35,45 @@ export function useCases() {
         query = query.or(`plaintiff_id.eq.${user.id},defendant_id.eq.${user.id}`);
       } else if (user.role === "lawyer") {
         // Lawyer sees cases through assignments - RLS handles this
-        // We rely on RLS policy for lawyers
+        // But we filter out cases where the lawyer declined the assignment
+      } else if (user.role === "admin_court" || user.role === "magistrate") {
+        // Only show cases that have been submitted by a lawyer (filed)
+        query = query.in("status", [
+          "submitted_to_admin",
+          "under_scrutiny",
+          "returned_for_revision",
+          "registered",
+          "summon_issued",
+          "preliminary_hearing",
+          "issues_framed",
+          "transferred_to_trial",
+          "evidence_stage",
+          "arguments",
+          "reserved_for_judgment",
+          "judgment_delivered",
+          "closed",
+          "disposed",
+        ]);
       }
-      // Court officials see all - handled by RLS
 
       const { data, error } = await query;
 
       if (error) {
         console.error("Error fetching cases:", error);
       } else {
-        setCases((data as CaseWithRelations[]) || []);
+        let filtered = (data as CaseWithRelations[]) || [];
+
+        // For lawyers, exclude cases where they declined the assignment
+        if (user.role === "lawyer") {
+          filtered = filtered.filter(
+            (c) =>
+              !c.assignments?.some(
+                (a) => a.lawyer_id === user.id && a.status === "declined"
+              )
+          );
+        }
+
+        setCases(filtered);
       }
     } catch (err) {
       console.error("Error fetching cases:", err);
@@ -58,7 +87,7 @@ export function useCases() {
   }, [fetchCases]);
 
   const createCase = async (caseData: {
-    case_type: "civil" | "criminal";
+    case_type: "civil" | "criminal" | "family";
     title: string;
     description: string;
     sensitivity: string;
@@ -87,7 +116,7 @@ export function useCases() {
       const { data: newCase, error: caseError } = await supabase
         .from("cases")
         .insert({
-          case_number: caseNumber || `${caseData.case_type === "civil" ? "CIV" : "CRM"}-${new Date().getFullYear()}-0001`,
+          case_number: caseNumber || `${caseData.case_type === "civil" ? "CIV" : caseData.case_type === "family" ? "FAM" : "CRM"}-${new Date().getFullYear()}-0001`,
           case_type: caseData.case_type,
           title: caseData.title,
           description: caseData.description,
@@ -216,7 +245,7 @@ export function useCases() {
     try {
       const supabase = createClient();
 
-      // Update assignment
+      // Update assignment (verify it belongs to this lawyer)
       const { error: assignError } = await supabase
         .from("case_assignments")
         .update({
@@ -226,7 +255,8 @@ export function useCases() {
           installment_count: installmentCount,
           responded_at: new Date().toISOString(),
         })
-        .eq("id", assignmentId);
+        .eq("id", assignmentId)
+        .eq("lawyer_id", user.id);
 
       if (assignError) return { error: assignError.message };
 
@@ -238,12 +268,17 @@ export function useCases() {
         .single();
 
       // Transition case to payment_pending
-      const { error: caseError } = await supabase
+      // Use .select() to verify the update actually affected a row
+      const { data: updatedCase, error: caseError } = await supabase
         .from("cases")
         .update({ status: "payment_pending" })
-        .eq("id", caseId);
+        .eq("id", caseId)
+        .eq("status", "pending_lawyer_acceptance")
+        .select("id")
+        .maybeSingle();
 
       if (caseError) return { error: caseError.message };
+      if (!updatedCase) return { error: "Failed to update case status. Please try again." };
 
       // Create payment records
       if (allowInstallments && installmentCount > 1) {
@@ -343,6 +378,17 @@ export function useCases() {
     try {
       const supabase = createClient();
 
+      // Revert case to draft BEFORE updating assignment,
+      // because the cases_update_lawyer RLS policy requires an
+      // assignment with status != 'declined' for the lawyer to update
+      const { error: caseError } = await supabase
+        .from("cases")
+        .update({ status: "draft" })
+        .eq("id", caseId)
+        .eq("status", "pending_lawyer_acceptance");
+
+      if (caseError) return { error: caseError.message };
+
       const { error: assignError } = await supabase
         .from("case_assignments")
         .update({
@@ -350,16 +396,10 @@ export function useCases() {
           decline_reason: reason,
           responded_at: new Date().toISOString(),
         })
-        .eq("id", assignmentId);
+        .eq("id", assignmentId)
+        .eq("lawyer_id", user.id);
 
       if (assignError) return { error: assignError.message };
-
-      // Revert case to draft
-      await supabase
-        .from("cases")
-        .update({ status: "draft" })
-        .eq("id", caseId)
-        .eq("status", "pending_lawyer_acceptance");
 
       // Log activity
       await supabase.from("case_activity_log").insert({
@@ -406,7 +446,7 @@ export function useCases() {
         .from("cases")
         .update({ status: "submitted_to_admin" })
         .eq("id", caseId)
-        .in("status", ["payment_confirmed", "drafting", "returned_for_revision"]);
+        .in("status", ["drafting", "returned_for_revision"]);
 
       if (error) return { error: error.message };
 
@@ -736,12 +776,15 @@ export function useCase(caseId: string) {
       }
 
       // Fetch documents
-      const { data: docs } = await supabase
+      const { data: docs, error: docsError } = await supabase
         .from("documents")
         .select("*")
         .eq("case_id", caseId)
         .order("created_at", { ascending: false });
 
+      if (docsError) {
+        console.error("Error fetching documents:", docsError.message, docsError.code);
+      }
       setDocuments((docs as CaseDocument[]) || []);
     } catch (err) {
       console.error("Error fetching case:", err);

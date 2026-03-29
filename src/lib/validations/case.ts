@@ -8,6 +8,14 @@ export const civilCaseSchema = z.object({
   lawyer_id: z.string().uuid("Please select a lawyer").optional(),
 });
 
+export const familyCaseSchema = z.object({
+  title: z.string().min(5, "Title must be at least 5 characters"),
+  description: z.string().min(20, "Description must be at least 20 characters"),
+  case_type: z.literal("family"),
+  sensitivity: z.enum(["normal", "sensitive", "highly_sensitive"]),
+  lawyer_id: z.string().uuid("Please select a lawyer").optional(),
+});
+
 export const criminalCaseSchema = z.object({
   title: z.string().min(5, "Title must be at least 5 characters"),
   description: z.string().min(20, "Description must be at least 20 characters"),
@@ -25,3 +33,4 @@ export const criminalCaseSchema = z.object({
 
 export type CivilCaseFormData = z.infer<typeof civilCaseSchema>;
 export type CriminalCaseFormData = z.infer<typeof criminalCaseSchema>;
+export type FamilyCaseFormData = z.infer<typeof familyCaseSchema>;

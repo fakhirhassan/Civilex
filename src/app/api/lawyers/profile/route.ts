@@ -37,8 +37,9 @@ export async function POST(request: NextRequest) {
 
     const adminClient = createAdminClient();
 
-    // If we couldn't verify via session, verify the user exists in profiles
-    // (created by the auth trigger) as a fallback check
+    // If session cookie isn't set (can happen right after signup),
+    // verify the user_id exists as a lawyer in profiles as fallback.
+    // The duplicate check below prevents creating extra profiles.
     if (!authenticatedUserId) {
       const { data: profile } = await adminClient
         .from("profiles")

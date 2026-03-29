@@ -134,7 +134,7 @@ export default function LawyerCaseReview({
                     <span>{c.case_number}</span>
                     <Badge
                       variant={
-                        c.case_type === "civil" ? "primary" : "danger"
+                        c.case_type === "civil" ? "primary" : c.case_type === "family" ? "warning" : "danger"
                       }
                     >
                       {c.case_type}

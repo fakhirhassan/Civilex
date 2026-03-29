@@ -7,6 +7,7 @@ import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
 import { useAuth } from "@/hooks/useAuth";
+import { profileUpdateSchema } from "@/lib/validations/auth";
 import { ROLE_LABELS } from "@/lib/constants";
 
 export default function SettingsPage() {
@@ -21,6 +22,7 @@ export default function SettingsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (user) {
@@ -39,6 +41,26 @@ export default function SettingsPage() {
     setIsLoading(true);
     setSuccess(false);
     setError("");
+    setFieldErrors({});
+
+    // Validate with Zod schema
+    const validation = profileUpdateSchema.safeParse({
+      fullName: formData.full_name,
+      phone: formData.phone || undefined,
+      cnic: formData.cnic || undefined,
+      address: formData.address || undefined,
+      city: formData.city || undefined,
+    });
+
+    if (!validation.success) {
+      const errs: Record<string, string> = {};
+      validation.error.issues.forEach((issue) => {
+        if (issue.path[0]) errs[issue.path[0] as string] = issue.message;
+      });
+      setFieldErrors(errs);
+      setIsLoading(false);
+      return;
+    }
 
     const { error: updateError } = await updateProfile(formData);
 
@@ -106,6 +128,7 @@ export default function SettingsPage() {
                 label="Phone Number"
                 placeholder="03XX-XXXXXXX"
                 value={formData.phone}
+                error={fieldErrors.phone}
                 onChange={(e) =>
                   setFormData({ ...formData, phone: e.target.value })
                 }
@@ -115,6 +138,7 @@ export default function SettingsPage() {
                 label="CNIC"
                 placeholder="XXXXX-XXXXXXX-X"
                 value={formData.cnic}
+                error={fieldErrors.cnic}
                 onChange={(e) =>
                   setFormData({ ...formData, cnic: e.target.value })
                 }

@@ -85,8 +85,8 @@ export function usePayments() {
     try {
       const supabase = createClient();
 
-      // Simulate payment processing - mark as completed
-      const { error: payError } = await supabase
+      // Simulate payment processing - mark as completed and verify
+      const { data: updatedPayment, error: payError } = await supabase
         .from("payments")
         .update({
           status: "completed",
@@ -94,16 +94,21 @@ export function usePayments() {
           transaction_id: `TXN-${Date.now()}`,
           transaction_reference: `REF-${Math.random().toString(36).substring(2, 10).toUpperCase()}`,
         })
-        .eq("id", paymentId);
+        .eq("id", paymentId)
+        .eq("status", "pending")
+        .select("id")
+        .maybeSingle();
 
       if (payError) return { error: payError.message };
+      if (!updatedPayment) return { error: "Payment could not be processed. It may have already been completed." };
 
       // Check if all payments for this case are completed
+      // The update above is committed, so this query sees the latest state
       const { data: pendingPayments } = await supabase
         .from("payments")
         .select("id")
         .eq("case_id", caseId)
-        .neq("status", "completed");
+        .in("status", ["pending", "processing"]);
 
       // Get payment details for notification
       const { data: paymentRow } = await supabase

@@ -47,9 +47,9 @@ export function useLawyers() {
         query = query.ilike("full_name", `%${filters.search}%`);
       }
 
-      // Apply city filter
+      // Apply city filter — search both profiles.city and lawyer_profiles.location
       if (filters.city) {
-        query = query.ilike("city", `%${filters.city}%`);
+        query = query.or(`city.ilike.%${filters.city}%,lawyer_profiles.location.ilike.%${filters.city}%`);
       }
 
       const { data, error } = await query;

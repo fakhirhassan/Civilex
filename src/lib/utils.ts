@@ -21,8 +21,8 @@ export function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
-export function generateCaseNumber(type: "civil" | "criminal", seq: number): string {
-  const prefix = type === "civil" ? "CIV" : "CRM";
+export function generateCaseNumber(type: "civil" | "criminal" | "family", seq: number): string {
+  const prefix = type === "civil" ? "CIV" : type === "family" ? "FAM" : "CRM";
   const year = new Date().getFullYear();
   return `${prefix}-${year}-${String(seq).padStart(4, "0")}`;
 }
