@@ -257,6 +257,68 @@ export default function DashboardPage() {
               />
             )}
 
+            {/* Defendant: Summoned cases needing lawyer */}
+            {role === "client" && cases.some((c) => c.defendant_id === user?.id && !c.assignments?.some((a) => a.side === "defendant" && a.status !== "declined")) && (
+              <Card>
+                <h3 className="mb-3 flex items-center gap-2 text-lg font-semibold text-primary">
+                  <Scale className="h-5 w-5" />
+                  Court Summon — Action Required
+                </h3>
+                <div className="space-y-3">
+                  {cases
+                    .filter((c) => c.defendant_id === user?.id && !c.assignments?.some((a) => a.side === "defendant" && a.status !== "declined"))
+                    .map((c) => (
+                      <div key={c.id} className="rounded-lg border border-warning bg-amber-50 p-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="font-medium">{c.title}</p>
+                          <p className="text-xs text-muted">{c.case_number} • You have been summoned as defendant</p>
+                        </div>
+                        <div className="flex gap-2 shrink-0">
+                          <Link href={`/cases/${c.id}`}>
+                            <Button size="sm" variant="outline">View Case</Button>
+                          </Link>
+                          <Link href="/lawyers">
+                            <Button size="sm" variant="primary">
+                              <Users className="h-4 w-4" />
+                              Hire Lawyer
+                            </Button>
+                          </Link>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </Card>
+            )}
+
+            {/* Defendant: Pending lawyer fee payments */}
+            {role === "client" && payments.some((p) => p.payer_id === user?.id && p.status === "pending") && (
+              <Card>
+                <h3 className="mb-3 flex items-center gap-2 text-lg font-semibold text-primary">
+                  <CreditCard className="h-5 w-5" />
+                  Lawyer Fee Awaiting Payment
+                </h3>
+                <div className="space-y-3">
+                  {payments
+                    .filter((p) => p.payer_id === user?.id && p.status === "pending")
+                    .map((p) => (
+                      <div key={p.id} className="rounded-lg border border-border p-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="font-medium">{p.case?.title || "—"}</p>
+                          <p className="text-xs text-muted">{p.case?.case_number} • {(p.receiver as { full_name: string } | null)?.full_name || "Lawyer"}</p>
+                          <p className="mt-1 text-sm font-medium text-primary">{formatCurrency(Number(p.amount))}</p>
+                        </div>
+                        <Link href="/payments">
+                          <Button size="sm" variant="primary">
+                            <CreditCard className="h-4 w-4" />
+                            Pay Now
+                          </Button>
+                        </Link>
+                      </div>
+                    ))}
+                </div>
+              </Card>
+            )}
+
             {/* Client: Awaiting Payment */}
             {role === "client" && awaitingPayment.length > 0 && (
               <Card>

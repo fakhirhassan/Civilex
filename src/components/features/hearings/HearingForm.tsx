@@ -12,6 +12,7 @@ interface HearingFormProps {
     hearing_type: HearingType;
     scheduled_date: string;
     courtroom?: string;
+    notes?: string;
   }) => Promise<{ error: string | null }>;
   onCancel?: () => void;
 }
@@ -20,6 +21,7 @@ export default function HearingForm({ onSubmit, onCancel }: HearingFormProps) {
   const [hearingType, setHearingType] = useState<HearingType>("preliminary");
   const [scheduledDate, setScheduledDate] = useState("");
   const [courtroom, setCourtroom] = useState("");
+  const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -38,6 +40,7 @@ export default function HearingForm({ onSubmit, onCancel }: HearingFormProps) {
       hearing_type: hearingType,
       scheduled_date: new Date(scheduledDate).toISOString(),
       courtroom: courtroom.trim() || undefined,
+      notes: notes.trim() || undefined,
     });
 
     setIsSubmitting(false);
@@ -94,6 +97,19 @@ export default function HearingForm({ onSubmit, onCancel }: HearingFormProps) {
             value={courtroom}
             onChange={(e) => setCourtroom(e.target.value)}
             placeholder="e.g., Court Room 3, Block A"
+            className="w-full rounded-lg border border-border bg-cream-light px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-medium text-foreground">
+            Notes (Optional)
+          </label>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={3}
+            placeholder="Any instructions or notes for this hearing..."
             className="w-full rounded-lg border border-border bg-cream-light px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           />
         </div>

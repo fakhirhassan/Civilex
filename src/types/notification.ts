@@ -12,6 +12,8 @@ export type NotificationType =
   | "scrutiny_approved"
   | "scrutiny_returned"
   | "judgment_delivered"
+  | "summon_issued"
+  | "document_requested"
   | "general";
 
 export interface Notification {

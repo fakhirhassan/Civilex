@@ -167,6 +167,83 @@ Next.js 16 + TypeScript + Supabase app for managing civil, criminal, and family 
 - **Type:** Security
 - **Status:** ⚠️ Accepted Risk — The fallback is needed for post-signup flow when cookies aren't set yet. The duplicate check prevents re-creation, and the data being inserted (bar license, specialization) is non-sensitive profile data. Low real-world risk for an FYP.
 
+### BUG-026: Hearing Notification Sent to Scheduling Judge (No Self-Skip)
+- **Severity:** Low
+- **Type:** Logic / UX
+- **Where:** [useHearings.ts:133-142](src/hooks/useHearings.ts#L133-L142)
+- **Description:** When a court official creates a hearing, notifications are sent to all parties including lawyers, plaintiff, and defendant. Unlike `updateCaseStatus` (which skips `pid !== user.id`), `createHearing` does NOT skip the scheduling officer. If the presiding officer is tracked as a party, they receive their own "Hearing Scheduled" notification.
+- **Suggested Fix:** Add `if (pid === user.id) continue;` before the notification insert in the loop.
+- **Affected Files:** `src/hooks/useHearings.ts`
+
+### BUG-027: `registerSchema` Refine Returns `undefined` Instead of `true` for Non-Lawyers
+- **Severity:** Medium
+- **Type:** Validation Bug
+- **Where:** [validations/auth.ts:30-37](src/lib/validations/auth.ts#L30-L37)
+- **Description:** The second `.refine()` on `registerSchema` (specialization check) has a missing `return true` for the non-lawyer case. The refine callback returns `undefined` when `role !== "lawyer"` because there's no explicit `return true` statement. In Zod, `undefined` is falsy, which means this refine will FAIL for all non-lawyer roles, blocking registration for clients, admin_court, magistrate, trial_judge, and stenographer.
+- **Steps to Reproduce:**
+  1. Go to register page
+  2. Select any role except "lawyer"
+  3. Fill in all required fields
+  4. Submit — validation fails with "At least one specialization is required for lawyers"
+- **Expected:** Non-lawyer roles should pass validation
+- **Actual:** The refine returns `undefined` (falsy) for non-lawyers, causing Zod validation failure
+- **Affected Files:** `src/lib/validations/auth.ts`
+
+### BUG-028: Settings Validation Schema Field Name Mismatch (`fullName` vs `full_name`)
+- **Severity:** Medium
+- **Type:** Validation
+- **Where:** [settings/page.tsx:47-48](src/app/(dashboard)/settings/page.tsx#L47-L48)
+- **Description:** The `profileUpdateSchema` expects `fullName` (camelCase), but the settings form stores data as `full_name` (snake_case). The settings page maps `full_name` to `fullName` when calling `safeParse` (line 48), which is correct. However, when validation errors are reported, the error path will be `"fullName"`, but the field errors are set to `fieldErrors.phone` and `fieldErrors.cnic` — there's no `error={fieldErrors.fullName}` on the full name input field. A validation error on the name field would have no visible error message.
+- **Steps to Reproduce:**
+  1. Go to Settings
+  2. Clear the Full Name field (or enter 1 character)
+  3. Submit — validation fails but no error shows on the name field
+- **Expected:** Error should display on the Full Name input
+- **Actual:** `fieldErrors.fullName` is set but never rendered (no `error` prop on full_name Input)
+- **Affected Files:** `src/app/(dashboard)/settings/page.tsx`
+
+### BUG-029: `useCases` Trial Judge/Stenographer See No Cases (Missing from Query Filter)
+- **Severity:** High
+- **Type:** Data / Role Filter
+- **Where:** [useCases.ts:33-57](src/hooks/useCases.ts#L33-L57)
+- **Description:** The `fetchCases` function has role-based filtering: `client` filters by plaintiff/defendant, `lawyer` filters by assignments, `admin_court`/`magistrate` filter by status. However, `trial_judge` and `stenographer` roles fall through to NO filter, which means the query returns ALL cases (no `.or()` or `.in()` clause added). If RLS policies are permissive for these roles, they'd see everything. If RLS is restrictive, they'd see nothing. Either way, there's no application-level query filter for these two roles.
+- **Steps to Reproduce:**
+  1. Log in as trial_judge
+  2. Go to Cases page
+  3. Either all cases appear (if RLS is permissive) or none (if restrictive)
+- **Expected:** Trial judge should see cases in trial statuses; stenographer should see assigned cases
+- **Actual:** No query filter applied for these roles
+- **Affected Files:** `src/hooks/useCases.ts`
+
+### BUG-030: Hearing Number Race Condition on Concurrent Scheduling
+- **Severity:** Low
+- **Type:** Race Condition
+- **Where:** [useHearings.ts:66-74](src/hooks/useHearings.ts#L66-L74)
+- **Description:** `createHearing` reads the last hearing number, increments it, then inserts. If two officials schedule hearings simultaneously for the same case, both could read the same `lastHearing.hearing_number` and create duplicate hearing numbers. This is a low-probability edge case for an FYP but worth noting.
+- **Suggested Fix:** Use a DB sequence or `generate_series` for hearing numbers, or add a unique constraint on `(case_id, hearing_number)`.
+- **Affected Files:** `src/hooks/useHearings.ts`
+
+### BUG-031: `acceptCase` Continues Creating Payments Even if Assignment Update Matched 0 Rows
+- **Severity:** Medium
+- **Type:** Logic / Data Integrity
+- **Where:** [useCases.ts:249-259](src/hooks/useCases.ts#L249-L259)
+- **Description:** The assignment update at line 249-259 uses `.eq("lawyer_id", user.id)` but doesn't verify the update affected a row (no `.select().maybeSingle()` like the case status update does). If the assignment doesn't belong to this lawyer or has already been accepted, the update silently affects 0 rows but the function continues to create payments and transition the case.
+- **Steps to Reproduce:**
+  1. Lawyer A accepts a case
+  2. Simultaneously, Lawyer B calls acceptCase with the same assignmentId
+  3. Assignment update affects 0 rows for Lawyer B but case status update and payments proceed
+- **Expected:** Should verify the assignment update succeeded before continuing
+- **Actual:** No verification; continues to case status update and payment creation
+- **Affected Files:** `src/hooks/useCases.ts`
+
+### BUG-032: `updateCaseStatus` Has No Valid Status Transition Enforcement
+- **Severity:** Medium
+- **Type:** Security / Workflow
+- **Where:** [useCases.ts:656-670](src/hooks/useCases.ts#L656-L670)
+- **Description:** `updateCaseStatus` accepts any `newStatus` string and only checks `currentStatus` matches. It doesn't validate that the transition is valid (e.g., from `evidence_stage` to `judgment_delivered` directly, skipping `arguments` and `reserved_for_judgment`). While the UI only shows valid buttons, a direct API call or buggy client could transition to any status.
+- **Suggested Fix:** Add a valid transitions map and verify `newStatus` is a valid successor of `currentStatus`.
+- **Affected Files:** `src/hooks/useCases.ts`
+
 ## Testing Log
 
 | Date | Action | Result | Notes |
@@ -175,6 +252,7 @@ Next.js 16 + TypeScript + Supabase app for managing civil, criminal, and family 
 | 2026-03-29 | Bug fix batch | 11 fixed, 1 partial, 3 skipped | BUG-001,003,005-009,011,012,015 fixed; BUG-002 partial; BUG-004,010,013,014 deferred |
 | 2026-03-29 | Re-test after fixes (/test-all) | 10 new bugs found | 2 High, 5 Medium, 3 Low — plus verification of prior fixes |
 | 2026-03-29 | Bug fix batch 2 | 9 fixed, 1 accepted risk | BUG-016-024 fixed; BUG-025 accepted risk |
+| 2026-03-29 | Re-test 3 (/test-all) | 7 new bugs found | 1 High, 4 Medium, 2 Low — all prior fixes verified |
 
 ---
 

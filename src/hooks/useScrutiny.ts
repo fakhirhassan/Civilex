@@ -185,6 +185,25 @@ export function useScrutiny(caseId: string) {
             });
           }
         }
+
+        // Fetch defendant info for summon readiness notification
+        const { data: caseDetails } = await supabase
+          .from("cases")
+          .select("defendant_name, defendant_email")
+          .eq("id", caseId)
+          .single();
+
+        // Notify admin that summon should be issued
+        if (caseDetails?.defendant_name) {
+          await supabase.from("notifications").insert({
+            user_id: user.id,
+            title: "Issue Summon Required",
+            message: `Case "${caseRow?.title}" is now registered. Please issue a summon to defendant "${caseDetails.defendant_name}"${caseDetails.defendant_email ? ` (${caseDetails.defendant_email})` : ""}.`,
+            type: "case_status_changed",
+            reference_type: "case",
+            reference_id: caseId,
+          });
+        }
       } else if (data.decision === "returned") {
         await supabase
           .from("cases")

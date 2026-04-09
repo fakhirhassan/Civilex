@@ -40,6 +40,8 @@ const typeConfig: Record<
   scrutiny_approved: { icon: Shield, color: "text-success", bg: "bg-green-50" },
   scrutiny_returned: { icon: Shield, color: "text-warning", bg: "bg-amber-50" },
   judgment_delivered: { icon: Scale, color: "text-primary", bg: "bg-primary/10" },
+  summon_issued: { icon: Scale, color: "text-danger", bg: "bg-red-50" },
+  document_requested: { icon: FileText, color: "text-warning", bg: "bg-amber-50" },
   general: { icon: Info, color: "text-muted", bg: "bg-cream-dark" },
 };
 

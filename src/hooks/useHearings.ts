@@ -52,10 +52,93 @@ export function useHearings(caseId: string) {
     fetchHearings();
   }, [fetchHearings]);
 
+  const assignJudge = async (judgeId: string) => {
+    if (!user) return { error: "Not authenticated" };
+
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase
+        .from("cases")
+        .update({
+          trial_judge_id: judgeId,
+          judge_assigned_at: new Date().toISOString(),
+        })
+        .eq("id", caseId);
+
+      if (error) return { error: error.message };
+
+      // Log activity
+      await supabase.from("case_activity_log").insert({
+        case_id: caseId,
+        actor_id: user.id,
+        action: "judge_assigned",
+        details: { judge_id: judgeId },
+      });
+
+      // Notify the assigned judge
+      const { data: caseRow } = await supabase
+        .from("cases")
+        .select("title, case_number")
+        .eq("id", caseId)
+        .single();
+
+      await supabase.from("notifications").insert({
+        user_id: judgeId,
+        title: "Case Assigned to You",
+        message: `You have been assigned as judge for case "${caseRow?.title}" (${caseRow?.case_number}).`,
+        type: "case_status_changed",
+        reference_type: "case",
+        reference_id: caseId,
+      });
+
+      // Also notify all parties
+      const partyIds: string[] = [];
+      const { data: assignedCase } = await supabase
+        .from("cases")
+        .select("plaintiff_id, defendant_id")
+        .eq("id", caseId)
+        .single();
+      if (assignedCase?.plaintiff_id) partyIds.push(assignedCase.plaintiff_id);
+      if (assignedCase?.defendant_id) partyIds.push(assignedCase.defendant_id);
+
+      const { data: assignments } = await supabase
+        .from("case_assignments")
+        .select("lawyer_id")
+        .eq("case_id", caseId)
+        .eq("status", "accepted");
+
+      if (assignments) {
+        for (const a of assignments) {
+          if (!partyIds.includes(a.lawyer_id)) partyIds.push(a.lawyer_id);
+        }
+      }
+
+      for (const pid of partyIds) {
+        if (pid !== judgeId) {
+          await supabase.from("notifications").insert({
+            user_id: pid,
+            title: "Judge Assigned",
+            message: `A judge has been assigned to case "${caseRow?.title}" (${caseRow?.case_number}).`,
+            type: "case_status_changed",
+            reference_type: "case",
+            reference_id: caseId,
+          });
+        }
+      }
+
+      return { error: null };
+    } catch (err) {
+      console.error("Error assigning judge:", err);
+      return { error: "Failed to assign judge" };
+    }
+  };
+
   const createHearing = async (data: {
     hearing_type: HearingType;
     scheduled_date: string;
     courtroom?: string;
+    notes?: string;
   }) => {
     if (!user) return { error: "Not authenticated", data: null };
 
@@ -83,6 +166,7 @@ export function useHearings(caseId: string) {
           courtroom: data.courtroom,
           presiding_officer_id: user.id,
           status: "scheduled",
+          notes: data.notes || null,
         })
         .select()
         .single();
@@ -275,6 +359,7 @@ export function useHearings(caseId: string) {
     hearings,
     isLoading,
     fetchHearings,
+    assignJudge,
     createHearing,
     updateHearing,
     addProceedings,

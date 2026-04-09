@@ -1,9 +1,11 @@
-import type { CaseType, CaseStatus } from "@/lib/constants";
+import type { CaseType, CaseStatus, CaseCategory } from "@/lib/constants";
 
 export interface Case {
   id: string;
   case_number: string;
   case_type: CaseType;
+  /** Sub-classification stored in case_category column */
+  case_category: CaseCategory | null;
   status: CaseStatus;
   title: string;
   description: string | null;
@@ -22,6 +24,24 @@ export interface Case {
   next_hearing_date: string | null;
   disposal_date: string | null;
 
+  /** Plaintiff contact info captured at filing */
+  plaintiff_name: string | null;
+  plaintiff_phone: string | null;
+  plaintiff_cnic: string | null;
+  plaintiff_address: string | null;
+
+  defendant_name: string | null;
+  defendant_email: string | null;
+  defendant_phone: string | null;
+  defendant_cnic: string | null;
+  defendant_address: string | null;
+
+  /** Marriage/divorce certificate number (family cases) */
+  marriage_certificate_number: string | null;
+
+  summon_sent_at: string | null;
+  summon_sent_by: string | null;
+
   created_at: string;
   updated_at: string;
 }
@@ -29,6 +49,7 @@ export interface Case {
 export interface CaseWithRelations extends Case {
   plaintiff?: { id: string; full_name: string; email: string } | null;
   defendant?: { id: string; full_name: string; email: string } | null;
+  trial_judge?: { id: string; full_name: string; email: string } | null;
   assignments?: CaseAssignment[];
   criminal_details?: CriminalCaseDetails | null;
 }
@@ -44,6 +65,7 @@ export interface CriminalCaseDetails {
   io_contact: string | null;
   bail_status: "not_applicable" | "applied" | "granted" | "denied" | "cancelled";
   arrest_date: string | null;
+  evidence_type: "oral" | "documentary" | null;
   created_at: string;
 }
 
@@ -98,6 +120,22 @@ export interface CaseDocument {
   signed_by: string | null;
   signed_at: string | null;
   created_at: string;
+  /** Joined from profiles — available when fetched via useCase */
+  uploader?: { id: string; full_name: string; email: string } | null;
+}
+
+export interface JudgeDraft {
+  id: string;
+  case_id: string;
+  judge_id: string;
+  title: string;
+  content: string;
+  hearing_id: string | null;
+  is_published: boolean;
+  published_at: string | null;
+  published_document_id: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface CaseActivityLog {

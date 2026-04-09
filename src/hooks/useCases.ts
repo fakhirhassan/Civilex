@@ -88,10 +88,25 @@ export function useCases() {
 
   const createCase = async (caseData: {
     case_type: "civil" | "criminal" | "family";
+    case_category: string;
     title: string;
     description: string;
     sensitivity: string;
     lawyer_id?: string;
+    // Plaintiff
+    plaintiff_name: string;
+    plaintiff_phone: string;
+    plaintiff_cnic: string;
+    plaintiff_address: string;
+    // Defendant
+    defendant_name: string;
+    defendant_email?: string;
+    defendant_phone?: string;
+    defendant_cnic?: string;
+    defendant_address?: string;
+    // Family-specific
+    marriage_certificate_number?: string;
+    // Criminal
     criminal_details?: {
       fir_number: string;
       police_station: string;
@@ -100,6 +115,7 @@ export function useCases() {
       io_name?: string;
       io_contact?: string;
       arrest_date?: string;
+      evidence_type: "oral" | "documentary";
     };
   }) => {
     if (!user) return { error: "Not authenticated", data: null };
@@ -112,16 +128,37 @@ export function useCases() {
         p_case_type: caseData.case_type,
       });
 
+      const prefix =
+        caseData.case_type === "civil"
+          ? "CIV"
+          : caseData.case_type === "family"
+          ? "FAM"
+          : "CRM";
+
       // Create the case
       const { data: newCase, error: caseError } = await supabase
         .from("cases")
         .insert({
-          case_number: caseNumber || `${caseData.case_type === "civil" ? "CIV" : caseData.case_type === "family" ? "FAM" : "CRM"}-${new Date().getFullYear()}-0001`,
+          case_number:
+            caseNumber ||
+            `${prefix}-${new Date().getFullYear()}-0001`,
           case_type: caseData.case_type,
+          case_category: caseData.case_category,
           title: caseData.title,
           description: caseData.description,
           sensitivity: caseData.sensitivity,
           plaintiff_id: user.id,
+          plaintiff_name: caseData.plaintiff_name,
+          plaintiff_phone: caseData.plaintiff_phone,
+          plaintiff_cnic: caseData.plaintiff_cnic,
+          plaintiff_address: caseData.plaintiff_address,
+          defendant_name: caseData.defendant_name,
+          defendant_email: caseData.defendant_email || null,
+          defendant_phone: caseData.defendant_phone || null,
+          defendant_cnic: caseData.defendant_cnic || null,
+          defendant_address: caseData.defendant_address || null,
+          marriage_certificate_number:
+            caseData.marriage_certificate_number || null,
           status: caseData.lawyer_id ? "pending_lawyer_acceptance" : "draft",
           filing_date: new Date().toISOString(),
         })
@@ -136,7 +173,14 @@ export function useCases() {
           .from("criminal_case_details")
           .insert({
             case_id: newCase.id,
-            ...caseData.criminal_details,
+            fir_number: caseData.criminal_details.fir_number,
+            police_station: caseData.criminal_details.police_station,
+            offense_description: caseData.criminal_details.offense_description,
+            offense_section: caseData.criminal_details.offense_section || null,
+            io_name: caseData.criminal_details.io_name || null,
+            io_contact: caseData.criminal_details.io_contact || null,
+            arrest_date: caseData.criminal_details.arrest_date || null,
+            evidence_type: caseData.criminal_details.evidence_type,
           });
 
         if (crimError) {
@@ -166,7 +210,11 @@ export function useCases() {
         case_id: newCase.id,
         actor_id: user.id,
         action: "case_created",
-        details: { case_type: caseData.case_type, title: caseData.title },
+        details: {
+          case_type: caseData.case_type,
+          case_category: caseData.case_category,
+          title: caseData.title,
+        },
       });
 
       // Notify assigned lawyer about new case
@@ -193,13 +241,16 @@ export function useCases() {
     caseId: string,
     file: File,
     documentType: string,
-    title: string
+    title: string,
+    description?: string
   ) => {
     if (!user) return { error: "Not authenticated", data: null };
 
     try {
       const supabase = createClient();
-      const filePath = `${caseId}/${documentType}/${crypto.randomUUID()}_${file.name}`;
+      // Sanitise file name: replace spaces so storage doesn't reject it
+      const safeName = file.name.replace(/\s+/g, "_");
+      const filePath = `${caseId}/${documentType}/${crypto.randomUUID()}_${safeName}`;
 
       // Upload to storage
       const { error: uploadError } = await supabase.storage
@@ -216,6 +267,7 @@ export function useCases() {
           uploaded_by: user.id,
           document_type: documentType,
           title,
+          description: description?.trim() || null,
           file_path: filePath,
           file_name: file.name,
           file_size: file.size,
@@ -233,6 +285,50 @@ export function useCases() {
     }
   };
 
+  const deleteDocument = async (documentId: string, filePath: string) => {
+    if (!user) return { error: "Not authenticated" };
+
+    try {
+      const supabase = createClient();
+
+      // Delete from storage (best-effort; DB record is the source of truth)
+      const { error: storageError } = await supabase.storage
+        .from("case-documents")
+        .remove([filePath]);
+
+      if (storageError) {
+        console.error("Error deleting file from storage:", storageError.message);
+      }
+
+      // Admin court can delete any document; others only their own uploads
+      const isAdmin = user.role === "admin_court";
+      let query = supabase.from("documents").delete().eq("id", documentId);
+      if (!isAdmin) query = query.eq("uploaded_by", user.id);
+
+      const { error: docError } = await query;
+      if (docError) return { error: docError.message };
+
+      return { error: null };
+    } catch (err) {
+      console.error("Error deleting document:", err);
+      return { error: "Failed to delete document" };
+    }
+  };
+
+  /** Get a short-lived signed URL so private storage files can be downloaded / previewed. */
+  const getDocumentUrl = async (filePath: string): Promise<string | null> => {
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase.storage
+        .from("case-documents")
+        .createSignedUrl(filePath, 60 * 5); // 5-minute URL
+      if (error || !data) return null;
+      return data.signedUrl;
+    } catch {
+      return null;
+    }
+  };
+
   const acceptCase = async (
     assignmentId: string,
     caseId: string,
@@ -244,6 +340,16 @@ export function useCases() {
 
     try {
       const supabase = createClient();
+
+      // Get the assignment to determine side and client_id
+      const { data: assignment, error: fetchAssignError } = await supabase
+        .from("case_assignments")
+        .select("id, side, client_id")
+        .eq("id", assignmentId)
+        .eq("lawyer_id", user.id)
+        .single();
+
+      if (fetchAssignError || !assignment) return { error: "Assignment not found or does not belong to you" };
 
       // Update assignment (verify it belongs to this lawyer)
       const { error: assignError } = await supabase
@@ -260,25 +366,32 @@ export function useCases() {
 
       if (assignError) return { error: assignError.message };
 
-      // Get plaintiff id for payment
+      const isDefendantSide = assignment.side === "defendant";
+      const payerId = isDefendantSide ? assignment.client_id : null;
+
+      // Only transition case status for plaintiff-side assignments
+      if (!isDefendantSide) {
+        // Transition case to payment_pending
+        const { data: updatedCase, error: caseError } = await supabase
+          .from("cases")
+          .update({ status: "payment_pending" })
+          .eq("id", caseId)
+          .eq("status", "pending_lawyer_acceptance")
+          .select("id")
+          .maybeSingle();
+
+        if (caseError) return { error: caseError.message };
+        if (!updatedCase) return { error: "Failed to update case status. Please try again." };
+      }
+
+      // Get plaintiff_id for plaintiff-side payment, or use assignment client_id for defendant side
       const { data: caseRow } = await supabase
         .from("cases")
-        .select("plaintiff_id")
+        .select("plaintiff_id, title")
         .eq("id", caseId)
         .single();
 
-      // Transition case to payment_pending
-      // Use .select() to verify the update actually affected a row
-      const { data: updatedCase, error: caseError } = await supabase
-        .from("cases")
-        .update({ status: "payment_pending" })
-        .eq("id", caseId)
-        .eq("status", "pending_lawyer_acceptance")
-        .select("id")
-        .maybeSingle();
-
-      if (caseError) return { error: caseError.message };
-      if (!updatedCase) return { error: "Failed to update case status. Please try again." };
+      const actualPayerId = isDefendantSide ? payerId : caseRow?.plaintiff_id;
 
       // Create payment records
       if (allowInstallments && installmentCount > 1) {
@@ -287,7 +400,7 @@ export function useCases() {
           .from("payments")
           .insert({
             case_id: caseId,
-            payer_id: caseRow?.plaintiff_id,
+            payer_id: actualPayerId,
             receiver_id: user.id,
             amount: installmentAmount,
             payment_type: "lawyer_fee",
@@ -295,7 +408,7 @@ export function useCases() {
             is_installment: true,
             installment_number: 1,
             total_installments: installmentCount,
-            description: `Lawyer fee installment 1 of ${installmentCount}`,
+            description: `Lawyer fee installment 1 of ${installmentCount} (${isDefendantSide ? "defendant" : "plaintiff"} side)`,
           })
           .select()
           .single();
@@ -304,7 +417,7 @@ export function useCases() {
           for (let i = 2; i <= installmentCount; i++) {
             await supabase.from("payments").insert({
               case_id: caseId,
-              payer_id: caseRow?.plaintiff_id,
+              payer_id: actualPayerId,
               receiver_id: user.id,
               amount: i === installmentCount
                 ? feeAmount - installmentAmount * (installmentCount - 1)
@@ -315,19 +428,19 @@ export function useCases() {
               installment_number: i,
               total_installments: installmentCount,
               parent_payment_id: firstPayment.id,
-              description: `Lawyer fee installment ${i} of ${installmentCount}`,
+              description: `Lawyer fee installment ${i} of ${installmentCount} (${isDefendantSide ? "defendant" : "plaintiff"} side)`,
             });
           }
         }
       } else {
         await supabase.from("payments").insert({
           case_id: caseId,
-          payer_id: caseRow?.plaintiff_id,
+          payer_id: actualPayerId,
           receiver_id: user.id,
           amount: feeAmount,
           payment_type: "lawyer_fee",
           status: "pending",
-          description: "Lawyer fee",
+          description: `Lawyer fee (${isDefendantSide ? "defendant" : "plaintiff"} side)`,
         });
       }
 
@@ -336,22 +449,22 @@ export function useCases() {
         case_id: caseId,
         actor_id: user.id,
         action: "lawyer_accepted",
-        details: { fee_amount: feeAmount, allow_installments: allowInstallments },
+        details: { fee_amount: feeAmount, allow_installments: allowInstallments, side: assignment.side },
       });
 
-      // Notify client that lawyer accepted and payment is pending
-      if (caseRow?.plaintiff_id) {
+      // Notify the client (defendant or plaintiff) that lawyer accepted
+      if (actualPayerId) {
         await supabase.from("notifications").insert({
-          user_id: caseRow.plaintiff_id,
+          user_id: actualPayerId,
           title: "Lawyer Accepted Your Case",
-          message: `Your lawyer has accepted the case and set a fee of PKR ${feeAmount.toLocaleString()}. Please proceed with payment.`,
+          message: `Your lawyer has accepted the case "${caseRow?.title}" and set a fee of PKR ${feeAmount.toLocaleString()}. Please proceed with payment.`,
           type: "case_accepted",
           reference_type: "case",
           reference_id: caseId,
         });
 
         await supabase.from("notifications").insert({
-          user_id: caseRow.plaintiff_id,
+          user_id: actualPayerId,
           title: "Payment Pending",
           message: `A payment of PKR ${feeAmount.toLocaleString()} is required for your case to proceed.`,
           type: "payment_pending",
@@ -378,16 +491,29 @@ export function useCases() {
     try {
       const supabase = createClient();
 
-      // Revert case to draft BEFORE updating assignment,
-      // because the cases_update_lawyer RLS policy requires an
-      // assignment with status != 'declined' for the lawyer to update
-      const { error: caseError } = await supabase
-        .from("cases")
-        .update({ status: "draft" })
-        .eq("id", caseId)
-        .eq("status", "pending_lawyer_acceptance");
+      // Fetch assignment to know the side
+      const { data: decliningAssignment } = await supabase
+        .from("case_assignments")
+        .select("side, client_id")
+        .eq("id", assignmentId)
+        .eq("lawyer_id", user.id)
+        .single();
 
-      if (caseError) return { error: caseError.message };
+      const isDecliningDefendantSide = decliningAssignment?.side === "defendant";
+
+      // Only revert case status for plaintiff-side assignments
+      if (!isDecliningDefendantSide) {
+        // Revert case to draft BEFORE updating assignment,
+        // because the cases_update_lawyer RLS policy requires an
+        // assignment with status != 'declined' for the lawyer to update
+        const { error: caseError } = await supabase
+          .from("cases")
+          .update({ status: "draft" })
+          .eq("id", caseId)
+          .eq("status", "pending_lawyer_acceptance");
+
+        if (caseError) return { error: caseError.message };
+      }
 
       const { error: assignError } = await supabase
         .from("case_assignments")
@@ -406,7 +532,7 @@ export function useCases() {
         case_id: caseId,
         actor_id: user.id,
         action: "lawyer_declined",
-        details: { reason },
+        details: { reason, side: decliningAssignment?.side },
       });
 
       // Get case info for notification
@@ -416,12 +542,16 @@ export function useCases() {
         .eq("id", caseId)
         .single();
 
-      // Notify client that lawyer declined
-      if (declinedCase?.plaintiff_id) {
+      // Notify the correct client (defendant or plaintiff)
+      const notifyUserId = isDecliningDefendantSide
+        ? decliningAssignment?.client_id
+        : declinedCase?.plaintiff_id;
+
+      if (notifyUserId) {
         await supabase.from("notifications").insert({
-          user_id: declinedCase.plaintiff_id,
+          user_id: notifyUserId,
           title: "Lawyer Declined Your Case",
-          message: `The lawyer has declined your case "${declinedCase.title}". Reason: ${reason}. You can assign a different lawyer.`,
+          message: `The lawyer has declined your case "${declinedCase?.title}". Reason: ${reason}. You can request a different lawyer.`,
           type: "case_declined",
           reference_type: "case",
           reference_id: caseId,
@@ -520,48 +650,22 @@ export function useCases() {
     }
   };
 
-  const issueSummon = async (caseId: string, defendantName: string) => {
+  const issueSummon = async (caseId: string) => {
     if (!user) return { error: "Not authenticated" };
 
     try {
-      const supabase = createClient();
-
-      const { error } = await supabase
-        .from("cases")
-        .update({ status: "summon_issued" })
-        .eq("id", caseId)
-        .eq("status", "registered");
-
-      if (error) return { error: error.message };
-
-      // Log activity
-      await supabase.from("case_activity_log").insert({
-        case_id: caseId,
-        actor_id: user.id,
-        action: "summon_issued",
-        details: { defendant: defendantName },
+      const res = await fetch("/api/summon/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ case_id: caseId }),
       });
 
-      // Notify defendant
-      const { data: caseRow } = await supabase
-        .from("cases")
-        .select("defendant_id, title")
-        .eq("id", caseId)
-        .single();
+      const data = await res.json();
 
-      if (caseRow?.defendant_id) {
-        await supabase.from("notifications").insert({
-          user_id: caseRow.defendant_id,
-          title: "Court Summon Issued",
-          message: `You have been summoned in case "${caseRow.title}". Please respond within the given time.`,
-          type: "case_status_changed",
-          reference_type: "case",
-          reference_id: caseId,
-        });
-      }
+      if (!res.ok) return { error: data.error || "Failed to issue summon" };
 
       await fetchCases();
-      return { error: null };
+      return { error: null, data };
     } catch (err) {
       console.error("Error issuing summon:", err);
       return { error: "Failed to issue summon" };
@@ -724,14 +828,88 @@ export function useCases() {
     }
   };
 
+  /**
+   * Defendant requests a lawyer for their side of the case.
+   * Creates a case_assignment with side='defendant' and status='pending'.
+   */
+  const requestDefendantLawyer = async (caseId: string, lawyerId: string) => {
+    if (!user) return { error: "Not authenticated" };
+
+    try {
+      const supabase = createClient();
+
+      // Verify the case exists and this user is the defendant
+      const { data: caseRow, error: caseError } = await supabase
+        .from("cases")
+        .select("id, title, case_number, defendant_id, plaintiff_id")
+        .eq("id", caseId)
+        .single();
+
+      if (caseError || !caseRow) return { error: "Case not found" };
+      if (caseRow.defendant_id !== user.id) return { error: "You are not the defendant in this case" };
+
+      // Check no active (non-declined) defendant assignment already exists for this lawyer
+      const { data: existing } = await supabase
+        .from("case_assignments")
+        .select("id, status")
+        .eq("case_id", caseId)
+        .eq("side", "defendant")
+        .neq("status", "declined");
+
+      if (existing && existing.length > 0) {
+        return { error: "You already have an active lawyer request for this case. Wait for a response or request another after a decline." };
+      }
+
+      // Create the assignment
+      const { error: assignError } = await supabase
+        .from("case_assignments")
+        .insert({
+          case_id: caseId,
+          lawyer_id: lawyerId,
+          client_id: user.id,
+          side: "defendant",
+          status: "pending",
+        });
+
+      if (assignError) return { error: assignError.message };
+
+      // Log activity
+      await supabase.from("case_activity_log").insert({
+        case_id: caseId,
+        actor_id: user.id,
+        action: "defendant_lawyer_requested",
+        details: { lawyer_id: lawyerId },
+      });
+
+      // Notify the lawyer
+      await supabase.from("notifications").insert({
+        user_id: lawyerId,
+        title: "New Case Request (Defendant Side)",
+        message: `You have a new case assignment request for case "${caseRow.title}" (${caseRow.case_number}). The client is the defendant and needs representation.`,
+        type: "case_assigned",
+        reference_type: "case",
+        reference_id: caseId,
+      });
+
+      await fetchCases();
+      return { error: null };
+    } catch (err) {
+      console.error("Error requesting defendant lawyer:", err);
+      return { error: "Failed to request lawyer" };
+    }
+  };
+
   return {
     cases,
     isLoading,
     fetchCases,
     createCase,
     uploadDocument,
+    deleteDocument,
+    getDocumentUrl,
     acceptCase,
     declineCase,
+    requestDefendantLawyer,
     submitToAdmin,
     startDrafting,
     issueSummon,
@@ -760,6 +938,7 @@ export function useCase(caseId: string) {
           *,
           plaintiff:profiles!plaintiff_id(id, full_name, email),
           defendant:profiles!defendant_id(id, full_name, email),
+          trial_judge:profiles!trial_judge_id(id, full_name, email),
           assignments:case_assignments(
             id, lawyer_id, client_id, side, status, fee_amount, allow_installments, installment_count, decline_reason, assigned_at, responded_at,
             lawyer:profiles!lawyer_id(id, full_name, email)
@@ -775,10 +954,10 @@ export function useCase(caseId: string) {
         setCaseData((data as CaseWithRelations) ?? null);
       }
 
-      // Fetch documents
+      // Fetch documents with uploader name for display
       const { data: docs, error: docsError } = await supabase
         .from("documents")
-        .select("*")
+        .select("*, uploader:profiles!uploaded_by(id, full_name, email)")
         .eq("case_id", caseId)
         .order("created_at", { ascending: false });
 

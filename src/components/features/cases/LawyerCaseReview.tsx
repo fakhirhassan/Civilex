@@ -139,8 +139,13 @@ export default function LawyerCaseReview({
                     >
                       {c.case_type}
                     </Badge>
+                    <Badge variant={assignment.side === "defendant" ? "warning" : "info"}>
+                      {assignment.side === "defendant" ? "Defendant side" : "Plaintiff side"}
+                    </Badge>
                     <span>
-                      Client: {c.plaintiff?.full_name || "Unknown"}
+                      Client: {assignment.side === "defendant"
+                        ? (c.defendant?.full_name || c.defendant_name || "Defendant")
+                        : (c.plaintiff?.full_name || "Unknown")}
                     </span>
                     {c.filing_date && (
                       <span>Filed: {formatDate(c.filing_date)}</span>

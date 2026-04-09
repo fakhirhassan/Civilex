@@ -28,6 +28,57 @@ export const CASE_TYPES = {
 
 export type CaseType = (typeof CASE_TYPES)[keyof typeof CASE_TYPES];
 
+/**
+ * Case categories narrow down the case_type.
+ * civil      → "civil"
+ * family     → "family" | "marriage_divorce" | "frc" | "documents" | "affidavits"
+ * criminal   → "criminal"
+ */
+export const CASE_CATEGORIES = {
+  CIVIL: "civil",
+  CRIMINAL: "criminal",
+  FAMILY: "family",
+  MARRIAGE_DIVORCE: "marriage_divorce",
+  FRC: "frc",
+  DOCUMENTS: "documents",
+  AFFIDAVITS: "affidavits",
+} as const;
+
+export type CaseCategory = (typeof CASE_CATEGORIES)[keyof typeof CASE_CATEGORIES];
+
+export const CASE_CATEGORY_LABELS: Record<CaseCategory, string> = {
+  civil: "Civil",
+  criminal: "Criminal",
+  family: "Family",
+  marriage_divorce: "Marriage / Divorce",
+  frc: "FRC (Family Reconciliation Certificate)",
+  documents: "Documents",
+  affidavits: "Affidavits",
+};
+
+/** Map each category back to its DB case_type */
+export const CATEGORY_TO_CASE_TYPE: Record<CaseCategory, CaseType> = {
+  civil: "civil",
+  criminal: "criminal",
+  family: "family",
+  marriage_divorce: "family",
+  frc: "family",
+  documents: "family",
+  affidavits: "family",
+};
+
+export const EVIDENCE_TYPES = {
+  ORAL: "oral",
+  DOCUMENTARY: "documentary",
+} as const;
+
+export type EvidenceType = (typeof EVIDENCE_TYPES)[keyof typeof EVIDENCE_TYPES];
+
+export const EVIDENCE_TYPE_LABELS: Record<EvidenceType, string> = {
+  oral: "Oral Evidence",
+  documentary: "Documentary / Evidential",
+};
+
 export const CASE_STATUS = {
   DRAFT: "draft",
   PENDING_LAWYER_ACCEPTANCE: "pending_lawyer_acceptance",
