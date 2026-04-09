@@ -123,25 +123,21 @@ export function useCases() {
     try {
       const supabase = createClient();
 
-      // Generate case number
-      const { data: caseNumber } = await supabase.rpc("generate_case_number", {
-        p_case_type: caseData.case_type,
-      });
+      // Generate case number (DB function handles family/civil/criminal + race lock)
+      const { data: caseNumber, error: caseNumberError } = await supabase.rpc(
+        "generate_case_number",
+        { p_case_type: caseData.case_type }
+      );
 
-      const prefix =
-        caseData.case_type === "civil"
-          ? "CIV"
-          : caseData.case_type === "family"
-          ? "FAM"
-          : "CRM";
+      if (caseNumberError || !caseNumber) {
+        return { error: "Failed to generate case number. Please try again.", data: null };
+      }
 
       // Create the case
       const { data: newCase, error: caseError } = await supabase
         .from("cases")
         .insert({
-          case_number:
-            caseNumber ||
-            `${prefix}-${new Date().getFullYear()}-0001`,
+          case_number: caseNumber,
           case_type: caseData.case_type,
           case_category: caseData.case_category,
           title: caseData.title,
