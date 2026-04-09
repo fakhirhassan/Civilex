@@ -54,15 +54,18 @@ export default function LawyerCaseReview({
   const [installmentCount, setInstallmentCount] = useState("1");
   const [feeErrors, setFeeErrors] = useState<Record<string, string>>({});
   const [isAccepting, setIsAccepting] = useState(false);
+  const [acceptError, setAcceptError] = useState("");
 
   // Decline form state
   const [declineReason, setDeclineReason] = useState("");
   const [isDeclining, setIsDeclining] = useState(false);
+  const [declineError, setDeclineError] = useState("");
 
   const handleAccept = async () => {
     if (!acceptModal) return;
 
     setFeeErrors({});
+    setAcceptError("");
     const result = feeStructureSchema.safeParse({
       fee_amount: parseFloat(feeAmount),
       allow_installments: allowInstallments,
@@ -88,21 +91,26 @@ export default function LawyerCaseReview({
     );
 
     setIsAccepting(false);
+    // Always refresh — acceptCase calls fetchCases internally, but call again
+    // to ensure the dashboard state is in sync regardless of error
+    onActionComplete();
 
-    if (!error) {
+    if (error) {
+      setAcceptError(error);
+    } else {
       setAcceptModal(null);
       setFeeAmount("");
       setAllowInstallments(false);
       setInstallmentCount("1");
-      onActionComplete();
+      setAcceptError("");
     }
   };
 
   const handleDecline = async () => {
     if (!declineModal) return;
-
     if (!declineReason.trim()) return;
 
+    setDeclineError("");
     setIsDeclining(true);
     const { error } = await declineCase(
       declineModal.assignmentId,
@@ -111,11 +119,15 @@ export default function LawyerCaseReview({
     );
 
     setIsDeclining(false);
+    // Always refresh regardless of error
+    onActionComplete();
 
-    if (!error) {
+    if (error) {
+      setDeclineError(error);
+    } else {
       setDeclineModal(null);
       setDeclineReason("");
-      onActionComplete();
+      setDeclineError("");
     }
   };
 
@@ -172,13 +184,18 @@ export default function LawyerCaseReview({
                 <div className="flex shrink-0 gap-2">
                   <Button
                     size="sm"
-                    onClick={() =>
+                    onClick={() => {
+                      setAcceptError("");
+                      setFeeErrors({});
+                      setFeeAmount("");
+                      setAllowInstallments(false);
+                      setInstallmentCount("1");
                       setAcceptModal({
                         assignmentId: assignment.id,
                         caseId: c.id,
                         caseTitle: c.title,
-                      })
-                    }
+                      });
+                    }}
                   >
                     <Check className="h-4 w-4" />
                     Accept
@@ -186,13 +203,15 @@ export default function LawyerCaseReview({
                   <Button
                     size="sm"
                     variant="danger"
-                    onClick={() =>
+                    onClick={() => {
+                      setDeclineError("");
+                      setDeclineReason("");
                       setDeclineModal({
                         assignmentId: assignment.id,
                         caseId: c.id,
                         caseTitle: c.title,
-                      })
-                    }
+                      });
+                    }}
                   >
                     <X className="h-4 w-4" />
                     Decline
@@ -272,8 +291,14 @@ export default function LawyerCaseReview({
           )}
         </div>
 
+        {acceptError && (
+          <div className="mt-4 rounded-lg border border-danger bg-danger/10 px-3 py-2 text-sm text-danger">
+            {acceptError}
+          </div>
+        )}
+
         <div className="mt-6 flex justify-end gap-2">
-          <Button variant="outline" onClick={() => setAcceptModal(null)}>
+          <Button variant="outline" onClick={() => { setAcceptModal(null); setAcceptError(""); }}>
             Cancel
           </Button>
           <Button onClick={handleAccept} isLoading={isAccepting}>
@@ -302,8 +327,14 @@ export default function LawyerCaseReview({
           onChange={(e) => setDeclineReason(e.target.value)}
         />
 
+        {declineError && (
+          <div className="mt-4 rounded-lg border border-danger bg-danger/10 px-3 py-2 text-sm text-danger">
+            {declineError}
+          </div>
+        )}
+
         <div className="mt-6 flex justify-end gap-2">
-          <Button variant="outline" onClick={() => setDeclineModal(null)}>
+          <Button variant="outline" onClick={() => { setDeclineModal(null); setDeclineError(""); }}>
             Cancel
           </Button>
           <Button

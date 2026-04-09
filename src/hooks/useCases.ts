@@ -908,14 +908,17 @@ export function useCases() {
 
       // Only allow withdrawal for cases the user owns that are in draft or
       // had a declined lawyer assignment (pending_lawyer_acceptance with all declined)
-      const { error } = await supabase
+      const { data: updated, error } = await supabase
         .from("cases")
         .update({ status: "disposed" })
         .eq("id", caseId)
         .eq("plaintiff_id", user.id)
-        .in("status", ["draft", "pending_lawyer_acceptance"]);
+        .in("status", ["draft", "pending_lawyer_acceptance"])
+        .select("id")
+        .maybeSingle();
 
       if (error) return { error: error.message };
+      if (!updated) return { error: "Could not remove case. You may not have permission, or the case is no longer in a removable state." };
 
       await supabase.from("case_activity_log").insert({
         case_id: caseId,
