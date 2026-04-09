@@ -81,6 +81,8 @@ export default function CaseDetailPage({
   const [summonResult, setSummonResult] = useState<{ defendant_name: string; defendant_email: string | null; email_sent: boolean; notification_sent: boolean; register_url: string } | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showWithdrawDialog, setShowWithdrawDialog] = useState(false);
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
+  const [withdrawError, setWithdrawError] = useState("");
 
   if (isLoading) {
     return (
@@ -1237,17 +1239,31 @@ export default function CaseDetailPage({
               This will permanently archive &ldquo;{caseData.title}&rdquo;. It will no longer appear
               in your active cases and cannot be reactivated.
             </p>
+            {withdrawError && (
+              <div className="mt-3 rounded-lg border border-danger bg-danger/10 px-3 py-2 text-sm text-danger">
+                {withdrawError}
+              </div>
+            )}
             <div className="mt-6 flex justify-end gap-3">
-              <Button variant="outline" onClick={() => setShowWithdrawDialog(false)}>
+              <Button
+                variant="outline"
+                onClick={() => { setShowWithdrawDialog(false); setWithdrawError(""); }}
+              >
                 Cancel
               </Button>
               <Button
                 variant="danger"
-                isLoading={isActionLoading}
+                isLoading={isWithdrawing}
                 onClick={async () => {
-                  await handleAction(() => withdrawCase(caseId));
-                  setShowWithdrawDialog(false);
-                  router.push("/cases");
+                  setIsWithdrawing(true);
+                  setWithdrawError("");
+                  const result = await withdrawCase(caseId);
+                  setIsWithdrawing(false);
+                  if (result.error) {
+                    setWithdrawError(result.error);
+                  } else {
+                    router.push("/cases");
+                  }
                 }}
               >
                 <Trash2 className="h-4 w-4" />
