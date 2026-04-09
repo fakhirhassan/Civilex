@@ -35,7 +35,7 @@ import Link from "next/link";
 
 export default function DashboardPage() {
   const { user, signOut } = useAuth();
-  const { cases, isLoading: casesLoading, fetchCases } = useCases();
+  const { cases, isLoading: casesLoading, fetchCases, acceptCase, declineCase } = useCases();
   const { payments, isLoading: paymentsLoading } = usePayments();
   const { notifications, unreadCount } = useNotifications();
   const router = useRouter();
@@ -49,9 +49,21 @@ export default function DashboardPage() {
   const role = user?.role;
 
   // Compute stats
-  const activeCases = cases.filter(
-    (c) => !["closed", "disposed", "draft"].includes(c.status)
-  ).length;
+  // For lawyers: "active" means they have an accepted assignment (excludes pending requests)
+  // For others: exclude terminal/pre-filing statuses
+  const activeCases =
+    role === "lawyer"
+      ? cases.filter((c) =>
+          c.assignments?.some(
+            (a) => a.lawyer_id === user?.id && a.status === "accepted"
+          )
+        ).length
+      : cases.filter(
+          (c) =>
+            !["closed", "disposed", "draft", "pending_lawyer_acceptance"].includes(
+              c.status
+            )
+        ).length;
   const pendingPayments = payments.filter((p) => p.status === "pending").length;
   const upcomingHearings = cases.filter((c) => c.next_hearing_date).length;
   const closedCases = cases.filter((c) =>
@@ -254,6 +266,8 @@ export default function DashboardPage() {
                 pendingCases={pendingRequests}
                 lawyerId={user!.id}
                 onActionComplete={fetchCases}
+                acceptCase={acceptCase}
+                declineCase={declineCase}
               />
             )}
 

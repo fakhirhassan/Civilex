@@ -7,7 +7,6 @@ import Input from "@/components/ui/Input";
 import Textarea from "@/components/ui/Textarea";
 import Modal from "@/components/ui/Modal";
 import Badge from "@/components/ui/Badge";
-import { useCases } from "@/hooks/useCases";
 import { formatDate } from "@/lib/utils";
 import { feeStructureSchema } from "@/lib/validations/payment";
 import { Check, X, Briefcase } from "lucide-react";
@@ -17,14 +16,27 @@ interface LawyerCaseReviewProps {
   pendingCases: CaseWithRelations[];
   lawyerId: string;
   onActionComplete: () => void;
+  acceptCase: (
+    assignmentId: string,
+    caseId: string,
+    feeAmount: number,
+    allowInstallments: boolean,
+    installmentCount: number
+  ) => Promise<{ error: string | null }>;
+  declineCase: (
+    assignmentId: string,
+    caseId: string,
+    reason: string
+  ) => Promise<{ error: string | null }>;
 }
 
 export default function LawyerCaseReview({
   pendingCases,
   lawyerId,
   onActionComplete,
+  acceptCase,
+  declineCase,
 }: LawyerCaseReviewProps) {
-  const { acceptCase, declineCase } = useCases();
   const [acceptModal, setAcceptModal] = useState<{
     assignmentId: string;
     caseId: string;

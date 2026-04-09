@@ -54,6 +54,7 @@ interface DocumentListProps {
 
 /* ── Permission helpers ─────────────────────────────────────────────── */
 function canUpload(p: DocumentPermissions): boolean {
+  if (p.role === "client") return true; // clients can upload to their own case
   if (p.role === "lawyer") return !!p.isAssignedLawyer;
   return ["magistrate", "trial_judge", "admin_court"].includes(p.role);
 }

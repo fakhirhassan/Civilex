@@ -895,6 +895,43 @@ export function useCases() {
     }
   };
 
+  /**
+   * Client-initiated withdrawal of a case that was declined by the lawyer
+   * (or is still in draft). Sets status to "disposed" so it's archived rather
+   * than hard-deleted (preserves audit trail).
+   */
+  const withdrawCase = async (caseId: string) => {
+    if (!user) return { error: "Not authenticated" };
+
+    try {
+      const supabase = createClient();
+
+      // Only allow withdrawal for cases the user owns that are in draft or
+      // had a declined lawyer assignment (pending_lawyer_acceptance with all declined)
+      const { error } = await supabase
+        .from("cases")
+        .update({ status: "disposed" })
+        .eq("id", caseId)
+        .eq("plaintiff_id", user.id)
+        .in("status", ["draft", "pending_lawyer_acceptance"]);
+
+      if (error) return { error: error.message };
+
+      await supabase.from("case_activity_log").insert({
+        case_id: caseId,
+        actor_id: user.id,
+        action: "status_changed",
+        details: { new_status: "disposed", old_status: "withdrawn_by_client" },
+      });
+
+      await fetchCases();
+      return { error: null };
+    } catch (err) {
+      console.error("Error withdrawing case:", err);
+      return { error: "Failed to withdraw case" };
+    }
+  };
+
   return {
     cases,
     isLoading,
@@ -905,6 +942,7 @@ export function useCases() {
     getDocumentUrl,
     acceptCase,
     declineCase,
+    withdrawCase,
     requestDefendantLawyer,
     submitToAdmin,
     startDrafting,

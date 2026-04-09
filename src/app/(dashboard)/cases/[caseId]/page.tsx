@@ -46,7 +46,9 @@ import {
   FileBox,
   Users2,
   MessageSquareText,
+  Trash2,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 type Tab = "overview" | "documents" | "parties" | "hearings" | "scrutiny" | "bail" | "investigation" | "evidence" | "witnesses" | "judgment" | "timeline" | "my_drafts";
@@ -58,8 +60,9 @@ export default function CaseDetailPage({
 }) {
   const { caseId } = use(params);
   const { user } = useAuth();
+  const router = useRouter();
   const { caseData, documents, isLoading, refreshCase } = useCase(caseId);
-  const { submitToAdmin, startDrafting, issueSummon, updateCaseStatus, submitChallan, uploadDocument, deleteDocument, getDocumentUrl } = useCases();
+  const { submitToAdmin, startDrafting, issueSummon, updateCaseStatus, submitChallan, uploadDocument, deleteDocument, getDocumentUrl, withdrawCase } = useCases();
   const { requests: docRequests, createRequest: createDocRequest, fulfillRequest: fulfillDocRequest } = useDocumentRequests(caseId);
   const { hearings, assignJudge } = useHearings(caseId);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
@@ -77,6 +80,7 @@ export default function CaseDetailPage({
   const [docRequestError, setDocRequestError] = useState("");
   const [summonResult, setSummonResult] = useState<{ defendant_name: string; defendant_email: string | null; email_sent: boolean; notification_sent: boolean; register_url: string } | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showWithdrawDialog, setShowWithdrawDialog] = useState(false);
 
   if (isLoading) {
     return (
@@ -524,6 +528,23 @@ export default function CaseDetailPage({
                 </Button>
               </Link>
             )}
+
+            {/* Client: Remove / Withdraw case (draft or all-declined) */}
+            {user?.role === "client" &&
+              user.id === caseData.plaintiff_id &&
+              (status === "draft" ||
+                (status === "pending_lawyer_acceptance" &&
+                  caseData.assignments?.length &&
+                  caseData.assignments.every((a) => a.status === "declined"))) && (
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={() => setShowWithdrawDialog(true)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Remove Case
+                </Button>
+              )}
           </div>
         </Card>
 
@@ -1201,6 +1222,36 @@ export default function CaseDetailPage({
                 }}
               >
                 Send Request
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Withdraw / Remove Case Dialog */}
+      {showWithdrawDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="mx-4 w-full max-w-sm rounded-xl border border-border bg-white p-6 shadow-xl">
+            <h3 className="mb-2 text-lg font-semibold text-foreground">Remove Case?</h3>
+            <p className="text-sm text-muted">
+              This will permanently archive &ldquo;{caseData.title}&rdquo;. It will no longer appear
+              in your active cases and cannot be reactivated.
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <Button variant="outline" onClick={() => setShowWithdrawDialog(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                isLoading={isActionLoading}
+                onClick={async () => {
+                  await handleAction(() => withdrawCase(caseId));
+                  setShowWithdrawDialog(false);
+                  router.push("/cases");
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+                Yes, Remove
               </Button>
             </div>
           </div>

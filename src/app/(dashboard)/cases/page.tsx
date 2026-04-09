@@ -10,7 +10,7 @@ import Input from "@/components/ui/Input";
 import Spinner from "@/components/ui/Spinner";
 import EmptyState from "@/components/ui/EmptyState";
 import Link from "next/link";
-import { Plus, Search, Briefcase } from "lucide-react";
+import { Plus, Search, Briefcase, Trash2 } from "lucide-react";
 import { useCases } from "@/hooks/useCases";
 import { useAuth } from "@/hooks/useAuth";
 import { formatDate } from "@/lib/utils";
@@ -19,8 +19,11 @@ import type { CaseStatus } from "@/lib/constants";
 
 export default function CasesPage() {
   const { user } = useAuth();
-  const { cases, isLoading } = useCases();
+  const { cases, isLoading, withdrawCase } = useCases();
   const [search, setSearch] = useState("");
+  const [withdrawConfirm, setWithdrawConfirm] = useState<{ id: string; title: string } | null>(null);
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
+  const [withdrawError, setWithdrawError] = useState("");
 
   const filtered = cases.filter(
     (c) =>
@@ -80,13 +83,41 @@ export default function CasesPage() {
     {
       key: "actions",
       label: "Actions",
-      render: (item: CaseWithRelations) => (
-        <Link href={`/cases/${item.id}`}>
-          <Button size="sm" variant="outline">
-            View
-          </Button>
-        </Link>
-      ),
+      render: (item: CaseWithRelations) => {
+        const isClient = user?.role === "client";
+        const allDeclined =
+          item.assignments &&
+          item.assignments.length > 0 &&
+          item.assignments.every((a) => a.status === "declined");
+        const canWithdraw =
+          isClient &&
+          (item.status === "draft" ||
+            (item.status === "pending_lawyer_acceptance" && allDeclined));
+
+        return (
+          <div className="flex gap-2">
+            <Link href={`/cases/${item.id}`}>
+              <Button size="sm" variant="outline">
+                View
+              </Button>
+            </Link>
+            {canWithdraw && (
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setWithdrawError("");
+                  setWithdrawConfirm({ id: item.id, title: item.title });
+                }}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Remove
+              </Button>
+            )}
+          </div>
+        );
+      },
     },
   ];
 
@@ -117,6 +148,47 @@ export default function CasesPage() {
             </Link>
           )}
         </div>
+
+        {/* Withdraw confirm dialog */}
+        {withdrawConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+            <div className="mx-4 w-full max-w-sm rounded-xl border border-border bg-white p-6 shadow-xl">
+              <h3 className="mb-2 text-lg font-semibold text-foreground">Remove Case?</h3>
+              <p className="text-sm text-muted">
+                This will mark &ldquo;{withdrawConfirm.title}&rdquo; as disposed and remove it from
+                your active cases. This cannot be undone.
+              </p>
+              {withdrawError && (
+                <p className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
+                  {withdrawError}
+                </p>
+              )}
+              <div className="mt-6 flex justify-end gap-3">
+                <Button variant="outline" onClick={() => setWithdrawConfirm(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  isLoading={isWithdrawing}
+                  onClick={async () => {
+                    setIsWithdrawing(true);
+                    setWithdrawError("");
+                    const result = await withdrawCase(withdrawConfirm.id);
+                    setIsWithdrawing(false);
+                    if (result.error) {
+                      setWithdrawError(result.error);
+                    } else {
+                      setWithdrawConfirm(null);
+                    }
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Yes, Remove
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Table */}
         {isLoading ? (
