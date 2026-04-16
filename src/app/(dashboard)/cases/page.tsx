@@ -27,8 +27,9 @@ export default function CasesPage() {
 
   const filtered = cases.filter(
     (c) =>
-      c.title.toLowerCase().includes(search.toLowerCase()) ||
-      c.case_number.toLowerCase().includes(search.toLowerCase())
+      c.status !== "disposed" &&
+      (c.title.toLowerCase().includes(search.toLowerCase()) ||
+        c.case_number.toLowerCase().includes(search.toLowerCase()))
   );
 
   const columns = [
