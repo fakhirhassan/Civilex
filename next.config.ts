@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  reactStrictMode: false,
   // Security headers
   async headers() {
     return [
@@ -22,6 +23,16 @@ const nextConfig: NextConfig = {
           {
             key: "X-DNS-Prefetch-Control",
             value: "on",
+          },
+        ],
+      },
+      {
+        // Prevent browser from caching dashboard pages — avoids stale auth state
+        source: "/(dashboard|cases|lawyers|settings|notifications|ai-assistant)(.*)",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "no-store, must-revalidate",
           },
         ],
       },

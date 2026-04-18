@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Sidebar from "@/components/layout/Sidebar";
 import MobileNav from "@/components/layout/MobileNav";
 import Spinner from "@/components/ui/Spinner";
@@ -13,8 +14,15 @@ export default function DashboardLayout({
 }) {
   const { user, isLoading } = useAuth();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const router = useRouter();
 
-  if (isLoading) {
+  useEffect(() => {
+    if (!isLoading && !user) {
+      router.replace("/login");
+    }
+  }, [isLoading, user, router]);
+
+  if (isLoading || !user) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-cream">
         <Spinner size="lg" />

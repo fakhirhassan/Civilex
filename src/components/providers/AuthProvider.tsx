@@ -4,7 +4,6 @@ import {
   createContext,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -18,7 +17,7 @@ interface AuthContextType extends AuthState {
     email: string,
     password: string,
     metadata: { full_name: string; role: string }
-  ) => Promise<{ error: string | null }>;
+  ) => Promise<{ error: string | null; userId: string | null }>;
   signIn: (
     email: string,
     password: string,
@@ -30,19 +29,12 @@ interface AuthContextType extends AuthState {
     data: Partial<UserProfile>
   ) => Promise<{ error: string | null }>;
   createLawyerProfile: (
-    data: Omit<LawyerProfile, "id" | "created_at" | "rating" | "total_reviews">
+    data: Omit<LawyerProfile, "id" | "created_at" | "rating" | "total_reviews">,
+    userId?: string
   ) => Promise<{ error: string | null }>;
 }
 
 export const AuthContext = createContext<AuthContextType | null>(null);
-
-function getSupabase(): SupabaseClient | null {
-  try {
-    return createClient();
-  } catch {
-    return null;
-  }
-}
 
 export default function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({
@@ -52,41 +44,56 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     isAuthenticated: false,
   });
 
-  const supabaseRef = useRef<SupabaseClient | null>(null);
+  // Stable ref — never changes between renders, no re-render side effects
+  const supabaseRef = useRef<SupabaseClient>(createClient());
+  const supabase = supabaseRef.current;
 
-  const supabase = useMemo(() => {
-    if (!supabaseRef.current) {
-      supabaseRef.current = getSupabase();
-    }
-    return supabaseRef.current;
-  }, []);
+  // Tracks the last userId we fetched a profile for, to avoid duplicate fetches
+  // when signIn and onAuthStateChange both fire for the same user.
+  const lastFetchedUserIdRef = useRef<string | null>(null);
 
   const fetchProfile = useCallback(
     async (authUser: User) => {
-      if (!supabase) return;
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", authUser.id)
-        .single();
-
-      let lawyerProfile: LawyerProfile | null = null;
-      if (profile?.role === "lawyer") {
-        const { data } = await supabase
-          .from("lawyer_profiles")
-          .select("*")
-          .eq("id", authUser.id)
-          .single();
-        lawyerProfile = data;
+      if (!supabase) {
+        setState({ user: null, lawyerProfile: null, isLoading: false, isAuthenticated: false });
+        return;
       }
 
-      setState({
-        user: profile,
-        lawyerProfile,
-        isLoading: false,
-        isAuthenticated: true,
-      });
+      lastFetchedUserIdRef.current = authUser.id;
+
+      try {
+        const { data: profile, error } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", authUser.id)
+          .maybeSingle();
+
+        if (error || !profile) {
+          // Profile not found — mark as not authenticated but don't force sign out
+          // (registration flow creates the profile after signUp returns)
+          setState({ user: null, lawyerProfile: null, isLoading: false, isAuthenticated: false });
+          return;
+        }
+
+        let lawyerProfile: LawyerProfile | null = null;
+        if (profile.role === "lawyer") {
+          const { data } = await supabase
+            .from("lawyer_profiles")
+            .select("*")
+            .eq("id", authUser.id)
+            .maybeSingle();
+          lawyerProfile = data;
+        }
+
+        setState({
+          user: profile,
+          lawyerProfile,
+          isLoading: false,
+          isAuthenticated: true,
+        });
+      } catch {
+        setState({ user: null, lawyerProfile: null, isLoading: false, isAuthenticated: false });
+      }
     },
     [supabase]
   );
@@ -97,13 +104,18 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    let cancelled = false;
     const getInitialSession = async () => {
       const {
         data: { user: authUser },
       } = await supabase.auth.getUser();
 
+      if (cancelled) return;
+
       if (authUser) {
-        await fetchProfile(authUser);
+        // Don't await here — let getInitialSession return so the GoTrue lock
+        // is released before fetchProfile starts its own queries.
+        fetchProfile(authUser);
       } else {
         setState({
           user: null,
@@ -119,9 +131,13 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === "SIGNED_IN" && session?.user) {
+      if ((event === "SIGNED_IN" || event === "TOKEN_REFRESHED") && session?.user) {
+        // Skip if signIn just fetched the profile for this user — avoids the
+        // lock-steal race between signIn's own query and this listener.
+        if (lastFetchedUserIdRef.current === session.user.id) return;
         await fetchProfile(session.user);
-      } else if (event === "SIGNED_OUT") {
+      } else if (event === "SIGNED_OUT" || (event === "TOKEN_REFRESHED" && !session)) {
+        lastFetchedUserIdRef.current = null;
         setState({
           user: null,
           lawyerProfile: null,
@@ -131,7 +147,10 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, [supabase, fetchProfile]);
 
   const signUp = async (
@@ -139,7 +158,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     password: string,
     metadata: { full_name: string; role: string }
   ) => {
-    if (!supabase) return { error: "Supabase not configured" };
+    if (!supabase) return { error: "Supabase not configured", userId: null };
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -155,7 +174,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       await fetchProfile(data.user);
     }
 
-    return { error: error?.message ?? null };
+    return { error: error?.message ?? null, userId: data.user?.id ?? null };
   };
 
   const signIn = async (email: string, password: string, role: string) => {
@@ -167,17 +186,32 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
 
     if (error) return { error: error.message };
 
-    // Verify the selected role matches the user's actual role
-    const { data: profile } = await supabase
+    // Role verification — runs after signInWithPassword has released the auth lock,
+    // so it won't race with onAuthStateChange → fetchProfile.
+    const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("role")
       .eq("id", data.user.id)
-      .single();
+      .maybeSingle();
 
-    if (!profile || profile.role !== role) {
+    if (profileError) {
       await supabase.auth.signOut();
-      return { error: "Invalid credentials for the selected role." };
+      return { error: "Failed to verify account. Please try again." };
     }
+
+    if (!profile) {
+      await supabase.auth.signOut();
+      return { error: "Account setup incomplete. Please re-register." };
+    }
+
+    if (profile.role !== role) {
+      await supabase.auth.signOut();
+      return { error: `This account is registered as "${profile.role}", not "${role}".` };
+    }
+
+    // Populate state directly here so the caller can navigate immediately.
+    // onAuthStateChange will also fire, but fetchProfile is idempotent.
+    await fetchProfile(data.user);
 
     return { error: null };
   };
@@ -217,7 +251,8 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const createLawyerProfile = async (
-    data: Omit<LawyerProfile, "id" | "created_at" | "rating" | "total_reviews">
+    data: Omit<LawyerProfile, "id" | "created_at" | "rating" | "total_reviews">,
+    userId?: string
   ) => {
     if (!supabase) return { error: "Supabase not configured" };
 
@@ -227,7 +262,11 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       data: { user: authUser },
     } = await supabase.auth.getUser();
 
-    if (!authUser) return { error: "Not authenticated" };
+    // Use passed userId as fallback when email confirmation is pending
+    // (user exists but session isn't established yet)
+    const effectiveUserId = authUser?.id ?? userId;
+
+    if (!effectiveUserId) return { error: "Not authenticated" };
 
     // Use server API route with admin client to bypass RLS issues
     // that can occur right after signup when session isn't fully established
@@ -235,7 +274,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       const res = await fetch("/api/lawyers/profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: authUser.id, ...data }),
+        body: JSON.stringify({ user_id: effectiveUserId, ...data }),
       });
 
       const result = await res.json();
@@ -244,7 +283,9 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         return { error: result.error || "Failed to create lawyer profile" };
       }
 
-      await fetchProfile(authUser);
+      if (authUser) {
+        await fetchProfile(authUser);
+      }
       return { error: null };
     } catch (err) {
       return { error: "Failed to create lawyer profile" };

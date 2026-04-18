@@ -10,6 +10,7 @@ import Button from "@/components/ui/Button";
 import { useAuth } from "@/hooks/useAuth";
 import { registerSchema } from "@/lib/validations/auth";
 import { ROLE_LABELS, type Role } from "@/lib/constants";
+import { Eye, EyeOff } from "lucide-react";
 
 const roleOptions = Object.entries(ROLE_LABELS).map(([value, label]) => ({
   value,
@@ -34,6 +35,7 @@ export default function RegisterPage() {
     fullName: "",
     email: "",
     password: "",
+    confirmPassword: "",
     phone: "",
     cnic: "",
     // Lawyer fields
@@ -45,6 +47,8 @@ export default function RegisterPage() {
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const isLawyer = formData.role === "lawyer";
 
@@ -58,6 +62,11 @@ export default function RegisterPage() {
         ? parseInt(formData.experienceYears)
         : undefined,
     };
+
+    if (formData.password !== formData.confirmPassword) {
+      setErrors({ confirmPassword: "Passwords do not match." });
+      return;
+    }
 
     const result = registerSchema.safeParse(validationData);
     if (!result.success) {
@@ -76,7 +85,7 @@ export default function RegisterPage() {
 
     setIsLoading(true);
 
-    const { error: signUpError } = await signUp(formData.email, formData.password, {
+    const { error: signUpError, userId } = await signUp(formData.email, formData.password, {
       full_name: formData.fullName,
       role: formData.role,
     });
@@ -88,19 +97,22 @@ export default function RegisterPage() {
     }
 
     // If lawyer, create lawyer profile
-    // createLawyerProfile fetches the auth user directly, no delay needed
-    if (isLawyer) {
-      const { error: lawyerError } = await createLawyerProfile({
-        bar_license_number: formData.barLicenseNumber,
-        specialization: formData.specialization,
-        experience_years: formData.experienceYears
-          ? parseInt(formData.experienceYears)
-          : 0,
-        bio: formData.bio || null,
-        hourly_rate: null,
-        is_available: true,
-        location: formData.location || null,
-      });
+    // Pass userId so it works even when email confirmation is pending
+    if (isLawyer && userId) {
+      const { error: lawyerError } = await createLawyerProfile(
+        {
+          bar_license_number: formData.barLicenseNumber,
+          specialization: formData.specialization,
+          experience_years: formData.experienceYears
+            ? parseInt(formData.experienceYears)
+            : 0,
+          bio: formData.bio || null,
+          hourly_rate: null,
+          is_available: true,
+          location: formData.location || null,
+        },
+        userId
+      );
 
       if (lawyerError) {
         setErrors({ form: lawyerError });
@@ -109,7 +121,7 @@ export default function RegisterPage() {
       }
     }
 
-    router.push("/dashboard");
+    router.push("/login?registered=true");
   };
 
   return (
@@ -164,17 +176,49 @@ export default function RegisterPage() {
           }
         />
 
-        <Input
-          id="password"
-          type="password"
-          label="Password"
-          placeholder="Enter Your Password"
-          value={formData.password}
-          error={errors.password}
-          onChange={(e) =>
-            setFormData({ ...formData, password: e.target.value })
-          }
-        />
+        <div className="relative">
+          <Input
+            id="password"
+            type={showPassword ? "text" : "password"}
+            label="Password"
+            placeholder="Enter Your Password"
+            value={formData.password}
+            error={errors.password}
+            onChange={(e) =>
+              setFormData({ ...formData, password: e.target.value })
+            }
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword((v) => !v)}
+            className="absolute right-3 top-[34px] text-muted hover:text-foreground"
+            tabIndex={-1}
+          >
+            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
+
+        <div className="relative">
+          <Input
+            id="confirmPassword"
+            type={showConfirmPassword ? "text" : "password"}
+            label="Confirm Password"
+            placeholder="Re-enter Your Password"
+            value={formData.confirmPassword}
+            error={errors.confirmPassword}
+            onChange={(e) =>
+              setFormData({ ...formData, confirmPassword: e.target.value })
+            }
+          />
+          <button
+            type="button"
+            onClick={() => setShowConfirmPassword((v) => !v)}
+            className="absolute right-3 top-[34px] text-muted hover:text-foreground"
+            tabIndex={-1}
+          >
+            {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
 
         {/* Lawyer-specific fields */}
         {isLawyer && (

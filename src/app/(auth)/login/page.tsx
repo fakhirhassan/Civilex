@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
@@ -9,6 +9,7 @@ import Button from "@/components/ui/Button";
 import { useAuth } from "@/hooks/useAuth";
 import { loginSchema } from "@/lib/validations/auth";
 import { ROLE_LABELS, type Role } from "@/lib/constants";
+import { Eye, EyeOff } from "lucide-react";
 
 const roleOptions = Object.entries(ROLE_LABELS).map(([value, label]) => ({
   value,
@@ -16,7 +17,17 @@ const roleOptions = Object.entries(ROLE_LABELS).map(([value, label]) => ({
 }));
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const justRegistered = searchParams.get("registered") === "true";
   const { signIn } = useAuth();
   const [formData, setFormData] = useState({
     role: "",
@@ -25,6 +36,7 @@ export default function LoginPage() {
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,6 +73,12 @@ export default function LoginPage() {
         ease.
       </p>
 
+      {justRegistered && (
+        <div className="mt-4 rounded-lg border border-green-300 bg-green-50 p-3 text-sm text-green-800">
+          Registration successful! Please check your email to confirm your account, then sign in.
+        </div>
+      )}
+
       {errors.form && (
         <div className="mt-4 rounded-lg border border-danger bg-danger-light p-3 text-sm text-danger">
           {errors.form}
@@ -93,17 +111,27 @@ export default function LoginPage() {
         />
 
         <div>
-          <Input
-            id="password"
-            type="password"
-            label="Password"
-            placeholder="Enter Your Password"
-            value={formData.password}
-            error={errors.password}
-            onChange={(e) =>
-              setFormData({ ...formData, password: e.target.value })
-            }
-          />
+          <div className="relative">
+            <Input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              label="Password"
+              placeholder="Enter Your Password"
+              value={formData.password}
+              error={errors.password}
+              onChange={(e) =>
+                setFormData({ ...formData, password: e.target.value })
+              }
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              className="absolute right-3 top-[34px] text-muted hover:text-foreground"
+              tabIndex={-1}
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
           <div className="mt-1 text-right">
             <Link
               href="/forgot-password"

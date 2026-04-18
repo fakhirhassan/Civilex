@@ -41,12 +41,20 @@ export async function POST(request: NextRequest) {
     // verify the user_id exists as a lawyer in profiles as fallback.
     // The duplicate check below prevents creating extra profiles.
     if (!authenticatedUserId) {
-      const { data: profile } = await adminClient
-        .from("profiles")
-        .select("id, role")
-        .eq("id", user_id)
-        .eq("role", "lawyer")
-        .single();
+      // Profile may not exist yet if the DB trigger hasn't fired;
+      // retry a few times with a short delay
+      let profile = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const { data } = await adminClient
+          .from("profiles")
+          .select("id, role")
+          .eq("id", user_id)
+          .eq("role", "lawyer")
+          .single();
+        profile = data;
+        if (profile) break;
+        await new Promise((r) => setTimeout(r, 500));
+      }
 
       if (!profile) {
         return NextResponse.json(

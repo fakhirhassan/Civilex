@@ -11,7 +11,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import type { Notification, NotificationType } from "@/types/notification";
-import type { SupabaseClient, RealtimeChannel } from "@supabase/supabase-js";
+import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 
 interface NotificationContextType {
   notifications: Notification[];
@@ -34,27 +34,13 @@ interface NotificationContextType {
 
 export const NotificationContext = createContext<NotificationContextType | null>(null);
 
-function getSupabase(): SupabaseClient | null {
-  try {
-    return createClient();
-  } catch {
-    return null;
-  }
-}
-
 export default function NotificationProvider({ children }: { children: ReactNode }) {
   const { user, isAuthenticated } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const supabaseRef = useRef<SupabaseClient | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
-
-  const supabase = (() => {
-    if (!supabaseRef.current) {
-      supabaseRef.current = getSupabase();
-    }
-    return supabaseRef.current;
-  })();
+  const supabaseRef = useRef<SupabaseClient>(createClient());
+  const supabase = supabaseRef.current;
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 

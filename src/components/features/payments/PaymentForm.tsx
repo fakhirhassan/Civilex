@@ -8,7 +8,7 @@ import Badge from "@/components/ui/Badge";
 import { usePayments } from "@/hooks/usePayments";
 import { paymentSchema } from "@/lib/validations/payment";
 import { formatCurrency } from "@/lib/utils";
-import { CreditCard, CheckCircle, Loader2 } from "lucide-react";
+import { CreditCard, CheckCircle, Loader2, Smartphone, Building2 } from "lucide-react";
 import type { PaymentWithRelations, PaymentMethod } from "@/types/payment";
 
 interface PaymentFormProps {
@@ -20,11 +20,35 @@ interface PaymentFormProps {
 
 type Step = "method" | "details" | "processing" | "success";
 
-const paymentMethods: { id: PaymentMethod; label: string; color: string }[] = [
-  { id: "jazzcash", label: "JazzCash", color: "bg-red-500" },
-  { id: "easypaisa", label: "Easypaisa", color: "bg-green-600" },
-  { id: "bank_transfer", label: "Bank Transfer", color: "bg-blue-600" },
+const paymentMethods: {
+  id: PaymentMethod;
+  label: string;
+  description: string;
+  color: string;
+  icon: "wallet" | "card" | "bank";
+}[] = [
+  { id: "card", label: "Credit / Debit Card", description: "Visa, Mastercard, UnionPay", color: "bg-indigo-600", icon: "card" },
+  { id: "jazzcash", label: "JazzCash", description: "Pay from your JazzCash wallet", color: "bg-red-500", icon: "wallet" },
+  { id: "easypaisa", label: "Easypaisa", description: "Pay from your Easypaisa wallet", color: "bg-green-600", icon: "wallet" },
+  { id: "bank_transfer", label: "Bank Transfer", description: "Direct transfer via IBAN", color: "bg-blue-600", icon: "bank" },
 ];
+
+const methodIcon = (icon: "wallet" | "card" | "bank") => {
+  if (icon === "card") return <CreditCard className="h-5 w-5" />;
+  if (icon === "bank") return <Building2 className="h-5 w-5" />;
+  return <Smartphone className="h-5 w-5" />;
+};
+
+const formatCardNumber = (value: string) => {
+  const digits = value.replace(/\D/g, "").slice(0, 16);
+  return digits.replace(/(.{4})/g, "$1 ").trim();
+};
+
+const formatExpiry = (value: string) => {
+  const digits = value.replace(/\D/g, "").slice(0, 4);
+  if (digits.length < 3) return digits;
+  return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+};
 
 export default function PaymentForm({
   payment,
@@ -38,9 +62,12 @@ export default function PaymentForm({
   const [formData, setFormData] = useState({
     account_number: "",
     account_name: "",
+    card_number: "",
+    card_holder: "",
+    card_expiry: "",
+    card_cvv: "",
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [isProcessing, setIsProcessing] = useState(false);
 
   const handleMethodSelect = (method: PaymentMethod) => {
     setSelectedMethod(method);
@@ -56,6 +83,10 @@ export default function PaymentForm({
       payment_method: selectedMethod,
       account_number: formData.account_number,
       account_name: formData.account_name,
+      card_number: formData.card_number,
+      card_holder: formData.card_holder,
+      card_expiry: formData.card_expiry,
+      card_cvv: formData.card_cvv,
     });
 
     if (!result.success) {
@@ -68,11 +99,9 @@ export default function PaymentForm({
     }
 
     setStep("processing");
-    setIsProcessing(true);
 
-    // If payment already exists, just simulate completion
+    // Persist payment_method on the DB (enum value). "card" requires migration 00025.
     if (payment.id) {
-      // Update payment method first
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
       await supabase
@@ -80,19 +109,14 @@ export default function PaymentForm({
         .update({ payment_method: selectedMethod })
         .eq("id", payment.id);
 
-      // Simulate a short delay for "processing"
       await new Promise((r) => setTimeout(r, 2000));
-
       const { error } = await simulatePayment(payment.id, payment.case_id);
-
       if (error) {
         setStep("details");
-        setIsProcessing(false);
         setErrors({ payment_method: error });
         return;
       }
     } else {
-      // Create new payment and simulate
       const { data: newPayment, error: createError } = await createPayment({
         case_id: payment.case_id,
         receiver_id: payment.receiver_id || "",
@@ -107,7 +131,6 @@ export default function PaymentForm({
 
       if (createError || !newPayment) {
         setStep("details");
-        setIsProcessing(false);
         setErrors({ payment_method: createError || "Failed to create payment" });
         return;
       }
@@ -116,7 +139,6 @@ export default function PaymentForm({
       await simulatePayment(newPayment.id, payment.case_id);
     }
 
-    setIsProcessing(false);
     setStep("success");
   };
 
@@ -125,12 +147,21 @@ export default function PaymentForm({
       onSuccess();
     }
     onClose();
-    // Reset state
     setStep("method");
     setSelectedMethod("");
-    setFormData({ account_number: "", account_name: "" });
+    setFormData({
+      account_number: "",
+      account_name: "",
+      card_number: "",
+      card_holder: "",
+      card_expiry: "",
+      card_cvv: "",
+    });
     setErrors({});
   };
+
+  const isCard = selectedMethod === "card";
+  const selectedMethodMeta = paymentMethods.find((m) => m.id === selectedMethod);
 
   return (
     <Modal
@@ -139,7 +170,6 @@ export default function PaymentForm({
       title={step === "success" ? "Payment Successful" : "Make Payment"}
       className="max-w-md"
     >
-      {/* Payment amount header */}
       {step !== "success" && (
         <div className="mb-6 rounded-lg bg-primary/5 p-4 text-center">
           <p className="text-sm text-muted">Amount Due</p>
@@ -155,7 +185,6 @@ export default function PaymentForm({
         </div>
       )}
 
-      {/* Step 1: Select Method */}
       {step === "method" && (
         <div className="space-y-3">
           <p className="text-sm font-medium text-primary">
@@ -170,64 +199,151 @@ export default function PaymentForm({
               <div
                 className={`flex h-10 w-10 items-center justify-center rounded-lg ${method.color} text-white`}
               >
-                <CreditCard className="h-5 w-5" />
+                {methodIcon(method.icon)}
               </div>
               <div>
                 <p className="font-medium text-foreground">{method.label}</p>
-                <p className="text-xs text-muted">
-                  Pay with {method.label}
-                </p>
+                <p className="text-xs text-muted">{method.description}</p>
               </div>
             </button>
           ))}
+          <p className="pt-2 text-center text-xs text-muted">
+            This is a demo environment. No real money will be charged.
+          </p>
         </div>
       )}
 
-      {/* Step 2: Enter Details */}
       {step === "details" && (
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-sm">
             <span className="text-muted">Method:</span>
-            <Badge variant="primary">
-              {paymentMethods.find((m) => m.id === selectedMethod)?.label}
-            </Badge>
+            <Badge variant="primary">{selectedMethodMeta?.label}</Badge>
             <button
               onClick={() => setStep("method")}
-              className="text-xs text-primary hover:underline"
+              className="ml-auto text-xs text-primary hover:underline"
             >
               Change
             </button>
           </div>
 
-          <Input
-            id="account_name"
-            label="Account Holder Name"
-            placeholder="Enter account holder name"
-            value={formData.account_name}
-            onChange={(e) =>
-              setFormData({ ...formData, account_name: e.target.value })
-            }
-            error={errors.account_name}
-          />
+          {isCard ? (
+            <>
+              {/* Faux card preview */}
+              <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-indigo-700 via-indigo-600 to-blue-700 p-4 text-white shadow-md">
+                <div className="flex items-start justify-between">
+                  <p className="text-xs uppercase tracking-wide opacity-80">Civilex Pay</p>
+                  <CreditCard className="h-6 w-6 opacity-90" />
+                </div>
+                <p className="mt-6 font-mono text-lg tracking-widest">
+                  {formData.card_number || "•••• •••• •••• ••••"}
+                </p>
+                <div className="mt-4 flex justify-between text-xs">
+                  <div>
+                    <p className="opacity-70">Cardholder</p>
+                    <p className="font-medium tracking-wide">
+                      {formData.card_holder || "FULL NAME"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="opacity-70">Expires</p>
+                    <p className="font-medium tracking-wide">
+                      {formData.card_expiry || "MM/YY"}
+                    </p>
+                  </div>
+                </div>
+              </div>
 
-          <Input
-            id="account_number"
-            label={
-              selectedMethod === "bank_transfer"
-                ? "Account Number / IBAN"
-                : "Mobile Number"
-            }
-            placeholder={
-              selectedMethod === "bank_transfer"
-                ? "Enter IBAN or account number"
-                : "03XX-XXXXXXX"
-            }
-            value={formData.account_number}
-            onChange={(e) =>
-              setFormData({ ...formData, account_number: e.target.value })
-            }
-            error={errors.account_number}
-          />
+              <Input
+                id="card_number"
+                label="Card Number"
+                placeholder="1234 5678 9012 3456"
+                value={formData.card_number}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    card_number: formatCardNumber(e.target.value),
+                  })
+                }
+                error={errors.card_number}
+                inputMode="numeric"
+              />
+
+              <Input
+                id="card_holder"
+                label="Cardholder Name"
+                placeholder="Name as on card"
+                value={formData.card_holder}
+                onChange={(e) =>
+                  setFormData({ ...formData, card_holder: e.target.value.toUpperCase() })
+                }
+                error={errors.card_holder}
+              />
+
+              <div className="grid grid-cols-2 gap-3">
+                <Input
+                  id="card_expiry"
+                  label="Expiry (MM/YY)"
+                  placeholder="MM/YY"
+                  value={formData.card_expiry}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      card_expiry: formatExpiry(e.target.value),
+                    })
+                  }
+                  error={errors.card_expiry}
+                  inputMode="numeric"
+                />
+                <Input
+                  id="card_cvv"
+                  label="CVV"
+                  placeholder="•••"
+                  value={formData.card_cvv}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      card_cvv: e.target.value.replace(/\D/g, "").slice(0, 4),
+                    })
+                  }
+                  error={errors.card_cvv}
+                  inputMode="numeric"
+                  type="password"
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <Input
+                id="account_name"
+                label="Account Holder Name"
+                placeholder="Enter account holder name"
+                value={formData.account_name}
+                onChange={(e) =>
+                  setFormData({ ...formData, account_name: e.target.value })
+                }
+                error={errors.account_name}
+              />
+
+              <Input
+                id="account_number"
+                label={
+                  selectedMethod === "bank_transfer"
+                    ? "Account Number / IBAN"
+                    : "Mobile Number"
+                }
+                placeholder={
+                  selectedMethod === "bank_transfer"
+                    ? "PKXX XXXX XXXX XXXX XXXX XXXX"
+                    : "03XX-XXXXXXX"
+                }
+                value={formData.account_number}
+                onChange={(e) =>
+                  setFormData({ ...formData, account_number: e.target.value })
+                }
+                error={errors.account_number}
+              />
+            </>
+          )}
 
           {errors.payment_method && (
             <p className="text-sm text-danger">{errors.payment_method}</p>
@@ -241,10 +357,13 @@ export default function PaymentForm({
               Pay {formatCurrency(payment.amount)}
             </Button>
           </div>
+
+          <p className="text-center text-xs text-muted">
+            Demo only — no real transaction will occur.
+          </p>
         </div>
       )}
 
-      {/* Step 3: Processing */}
       {step === "processing" && (
         <div className="flex flex-col items-center py-8">
           <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -257,7 +376,6 @@ export default function PaymentForm({
         </div>
       )}
 
-      {/* Step 4: Success */}
       {step === "success" && (
         <div className="flex flex-col items-center py-6">
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-success-light">

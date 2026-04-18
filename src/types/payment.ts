@@ -1,4 +1,4 @@
-export type PaymentMethod = "jazzcash" | "easypaisa" | "bank_transfer";
+export type PaymentMethod = "jazzcash" | "easypaisa" | "bank_transfer" | "card";
 export type PaymentStatus = "pending" | "processing" | "completed" | "failed" | "refunded";
 export type PaymentType = "court_fee" | "lawyer_fee" | "stamp_duty" | "miscellaneous";
 

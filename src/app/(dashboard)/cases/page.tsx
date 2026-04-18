@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Topbar from "@/components/layout/Topbar";
 import Table from "@/components/ui/Table";
 import Badge from "@/components/ui/Badge";
@@ -19,11 +19,15 @@ import type { CaseStatus } from "@/lib/constants";
 
 export default function CasesPage() {
   const { user } = useAuth();
-  const { cases, isLoading, withdrawCase } = useCases();
+  const { cases, isLoading, withdrawCase, fetchCases } = useCases();
   const [search, setSearch] = useState("");
   const [withdrawConfirm, setWithdrawConfirm] = useState<{ id: string; title: string } | null>(null);
   const [isWithdrawing, setIsWithdrawing] = useState(false);
   const [withdrawError, setWithdrawError] = useState("");
+
+  useEffect(() => {
+    fetchCases();
+  }, [fetchCases]);
 
   const filtered = cases.filter(
     (c) =>

@@ -86,6 +86,15 @@ export function useCases() {
     fetchCases();
   }, [fetchCases]);
 
+  // Refetch when the page becomes visible again (e.g. switching tabs or navigating back)
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") fetchCases();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [fetchCases]);
+
   const createCase = async (caseData: {
     case_type: "civil" | "criminal" | "family";
     case_category: string;

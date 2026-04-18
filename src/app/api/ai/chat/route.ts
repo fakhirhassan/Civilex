@@ -1,41 +1,37 @@
 import { NextRequest, NextResponse } from "next/server";
+import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
 
-// Placeholder responses for the AI assistant
-const PLACEHOLDER_RESPONSES: Record<string, string> = {
-  case: "Based on the Pakistan Civil Procedure Code (CPC), I can help you understand case filing requirements. A civil suit must include a properly drafted plaint (Order VII), relevant documents, and court fees. Would you like me to explain any specific aspect?",
-  hearing: "Court hearings in Pakistan follow a structured process. The judge calls the case, both sides present arguments, and the court records proceedings. Key hearing types include preliminary hearings, evidence recording, and final arguments. What specific hearing information do you need?",
-  evidence: "Under the Qanun-e-Shahadat Order 1984 (Pakistan's evidence law), evidence must be relevant, admissible, and properly documented. Documentary evidence should be original or certified copies. Would you like guidance on a specific type of evidence?",
-  bail: "Bail in Pakistan is governed by Sections 496-502 of the CrPC. Pre-arrest bail (anticipatory bail) and post-arrest bail have different requirements. The court considers the nature of the offense, likelihood of absconding, and past criminal record. What specific bail information do you need?",
-  payment: "Court fees in Pakistan are governed by the Court Fees Act 1870. Fees vary by court, case type, and relief sought. Lawyer fees are typically agreed upon between the client and lawyer. Can I help you understand a specific payment aspect?",
-  judgment: "A judgment in Pakistan must contain a concise statement of facts, points for determination, the decision on each point with reasons, and the final order. Appeals can be filed within 30 days of judgment in most cases. What would you like to know more about?",
-  default: "I'm Civilex AI, your legal assistant for Pakistani judiciary matters. I can help with questions about case filing, court procedures, evidence requirements, bail provisions, payment guidance, and general legal information. Please note that my responses are for informational purposes only and do not constitute legal advice. How can I assist you today?",
+type Mode = "chat" | "draft";
+
+const SYSTEM_PROMPTS: Record<Mode, string> = {
+  chat: `You are Civilex AI, a legal assistant focused exclusively on the Pakistani judicial system.
+You help clients, lawyers, and court staff understand procedures under:
+- Code of Civil Procedure 1908 (CPC)
+- Code of Criminal Procedure 1898 (CrPC)
+- Qanun-e-Shahadat Order 1984 (Law of Evidence)
+- Pakistan Penal Code 1860 (PPC)
+- Family Courts Act 1964
+- Court Fees Act 1870
+
+Rules:
+- Always cite relevant sections / orders / articles when discussing law.
+- Use clear, plain language. Prefer short paragraphs and numbered steps.
+- If a question falls outside Pakistani law, say so briefly and redirect.
+- End substantive answers with: "Note: This is general information, not legal advice."`,
+
+  draft: `You are Civilex AI operating in DRAFTING mode. You produce formal legal documents
+for the Pakistani judicial system in proper court format.
+
+Output requirements:
+- Produce a complete, court-ready draft the user can adapt.
+- Use standard headings: "IN THE COURT OF …", cause title (Plaintiff vs Defendant), suit/case number placeholder, then numbered paragraphs.
+- Include a Prayer/Relief clause and Verification where appropriate.
+- Use placeholders in square brackets like [Plaintiff Name], [CNIC], [Date] for details the user hasn't provided.
+- Cite the relevant provision of law (e.g. "under Order VII Rule 1 CPC").
+- Do NOT add commentary before or after the draft unless the user asks.
+- If the user's request is ambiguous, still produce a draft using reasonable placeholders — do not ask clarifying questions.`,
 };
-
-function getPlaceholderResponse(message: string): string {
-  const lower = message.toLowerCase();
-
-  if (lower.includes("case") || lower.includes("file") || lower.includes("plaint") || lower.includes("suit")) {
-    return PLACEHOLDER_RESPONSES.case;
-  }
-  if (lower.includes("hearing") || lower.includes("court date") || lower.includes("proceedings")) {
-    return PLACEHOLDER_RESPONSES.hearing;
-  }
-  if (lower.includes("evidence") || lower.includes("exhibit") || lower.includes("proof") || lower.includes("document")) {
-    return PLACEHOLDER_RESPONSES.evidence;
-  }
-  if (lower.includes("bail") || lower.includes("arrest") || lower.includes("criminal")) {
-    return PLACEHOLDER_RESPONSES.bail;
-  }
-  if (lower.includes("payment") || lower.includes("fee") || lower.includes("cost") || lower.includes("money")) {
-    return PLACEHOLDER_RESPONSES.payment;
-  }
-  if (lower.includes("judgment") || lower.includes("verdict") || lower.includes("order") || lower.includes("appeal")) {
-    return PLACEHOLDER_RESPONSES.judgment;
-  }
-
-  return PLACEHOLDER_RESPONSES.default;
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -48,8 +44,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json(
+        {
+          error:
+            "AI assistant is not configured. Please set OPENAI_API_KEY in the environment.",
+        },
+        { status: 503 }
+      );
+    }
+
     const body = await request.json();
-    const { message } = body;
+    const { message, mode, history } = body as {
+      message?: unknown;
+      mode?: unknown;
+      history?: unknown;
+    };
 
     if (!message || typeof message !== "string") {
       return NextResponse.json(
@@ -58,19 +69,49 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Simulate a small delay for realism
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    const selectedMode: Mode = mode === "draft" ? "draft" : "chat";
 
-    const response = getPlaceholderResponse(message);
+    const priorMessages: { role: "user" | "assistant"; content: string }[] = [];
+    if (Array.isArray(history)) {
+      for (const m of history.slice(-10)) {
+        if (
+          m &&
+          typeof m === "object" &&
+          (m.role === "user" || m.role === "assistant") &&
+          typeof m.content === "string" &&
+          m.content.trim()
+        ) {
+          priorMessages.push({ role: m.role, content: m.content });
+        }
+      }
+    }
+
+    const openai = new OpenAI({ apiKey });
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: selectedMode === "draft" ? 0.3 : 0.5,
+      max_tokens: selectedMode === "draft" ? 1600 : 800,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPTS[selectedMode] },
+        ...priorMessages,
+        { role: "user", content: message.trim() },
+      ],
+    });
+
+    const response =
+      completion.choices[0]?.message?.content?.trim() ??
+      "I could not generate a response. Please try again.";
 
     return NextResponse.json({
       response,
-      disclaimer: "This is a placeholder AI response for demonstration purposes. In production, this would be powered by a real AI model.",
+      mode: selectedMode,
     });
   } catch (err) {
-    console.error("AI chat error:", err);
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("AI chat error:", message);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: "AI request failed. Please try again." },
       { status: 500 }
     );
   }
