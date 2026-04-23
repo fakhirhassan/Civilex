@@ -134,6 +134,50 @@ export function useHearings(caseId: string) {
     }
   };
 
+  const assignStenographer = async (stenographerId: string) => {
+    if (!user) return { error: "Not authenticated" };
+
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase
+        .from("cases")
+        .update({ stenographer_id: stenographerId })
+        .eq("id", caseId);
+
+      if (error) return { error: error.message };
+
+      await supabase.from("case_activity_log").insert({
+        case_id: caseId,
+        actor_id: user.id,
+        action: "stenographer_assigned",
+        details: { stenographer_id: stenographerId },
+      });
+
+      const { data: caseRow } = await supabase
+        .from("cases")
+        .select("title, case_number")
+        .eq("id", caseId)
+        .single();
+
+      if (stenographerId !== user.id) {
+        await supabase.from("notifications").insert({
+          user_id: stenographerId,
+          title: "Case Assigned to You",
+          message: `You have been assigned as stenographer for case "${caseRow?.title}" (${caseRow?.case_number}). You will be responsible for recording hearing transcripts.`,
+          type: "case_status_changed",
+          reference_type: "case",
+          reference_id: caseId,
+        });
+      }
+
+      return { error: null };
+    } catch (err) {
+      console.error("Error assigning stenographer:", err);
+      return { error: "Failed to assign stenographer" };
+    }
+  };
+
   const createHearing = async (data: {
     hearing_type: HearingType;
     scheduled_date: string;
@@ -215,6 +259,7 @@ export function useHearings(caseId: string) {
       }
 
       for (const pid of partyIds) {
+        if (pid === user.id) continue;
         await supabase.from("notifications").insert({
           user_id: pid,
           title: "Hearing Scheduled",
@@ -360,6 +405,7 @@ export function useHearings(caseId: string) {
     isLoading,
     fetchHearings,
     assignJudge,
+    assignStenographer,
     createHearing,
     updateHearing,
     addProceedings,

@@ -208,6 +208,8 @@ export const SIDEBAR_NAV = {
   ],
   stenographer: [
     { label: "Dashboard", href: "/dashboard", icon: "LayoutDashboard" },
+    { label: "Today's Hearings", href: "/stenographer/today", icon: "Calendar" },
+    { label: "Transcripts", href: "/stenographer/transcripts", icon: "FileText" },
     { label: "Cases", href: "/cases", icon: "Briefcase" },
     { label: "Notifications", href: "/notifications", icon: "Bell" },
     { label: "Settings", href: "/settings", icon: "Settings" },

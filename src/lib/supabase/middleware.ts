@@ -67,6 +67,7 @@ export async function updateSession(request: NextRequest) {
         "/cases/criminal": ["admin_court", "magistrate"],
         "/lawyers": ["client"],
         "/ai-assistant": ["lawyer"],
+        "/stenographer": ["stenographer"],
       };
 
       for (const [route, allowedRoles] of Object.entries(restrictedRoutes)) {

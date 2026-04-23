@@ -54,6 +54,12 @@ export function useCases() {
           "closed",
           "disposed",
         ]);
+      } else if (user.role === "stenographer") {
+        // Stenographers only see cases they're assigned to.
+        query = query.eq("stenographer_id", user.id);
+      } else if (user.role === "trial_judge") {
+        // Judges only see cases assigned to them.
+        query = query.eq("trial_judge_id", user.id);
       }
 
       const { data, error } = await query;
@@ -985,6 +991,7 @@ export function useCase(caseId: string) {
           plaintiff:profiles!plaintiff_id(id, full_name, email),
           defendant:profiles!defendant_id(id, full_name, email),
           trial_judge:profiles!trial_judge_id(id, full_name, email),
+          stenographer:profiles!stenographer_id(id, full_name, email),
           assignments:case_assignments(
             id, lawyer_id, client_id, side, status, fee_amount, allow_installments, installment_count, decline_reason, assigned_at, responded_at,
             lawyer:profiles!lawyer_id(id, full_name, email)

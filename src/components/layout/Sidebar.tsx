@@ -15,6 +15,8 @@ import {
   Bell,
   ClipboardCheck,
   Gavel,
+  Calendar,
+  FileText,
   type LucideIcon,
 } from "lucide-react";
 
@@ -28,6 +30,8 @@ const iconMap: Record<string, LucideIcon> = {
   Bell,
   ClipboardCheck,
   Gavel,
+  Calendar,
+  FileText,
 };
 
 interface SidebarProps {

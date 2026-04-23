@@ -5,6 +5,7 @@ import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
 import { useEvidence } from "@/hooks/useEvidence";
+import { useCaseIssues } from "@/hooks/useCaseIssues";
 import {
   EVIDENCE_STATUS_LABELS,
   EVIDENCE_TYPE_OPTIONS,
@@ -15,6 +16,7 @@ import type {
   EvidenceStatus,
   WitnessSide,
 } from "@/types/trial";
+import type { CaseIssue } from "@/types/hearing";
 import { formatDateTime } from "@/lib/utils";
 import {
   FileBox,
@@ -24,6 +26,8 @@ import {
   XCircle,
   Eye,
   Tag,
+  Link2,
+  X,
 } from "lucide-react";
 
 interface EvidencePanelProps {
@@ -48,8 +52,16 @@ export default function EvidencePanel({
   isJudge = false,
   isLawyer = false,
 }: EvidencePanelProps) {
-  const { evidence, isLoading, submitEvidence, updateEvidenceStatus } =
-    useEvidence(caseId);
+  const {
+    evidence,
+    isLoading,
+    submitEvidence,
+    updateEvidenceStatus,
+    linkToIssue,
+    unlinkFromIssue,
+  } = useEvidence(caseId);
+  const { issues } = useCaseIssues(caseId);
+  const canTagIssues = isJudge || isLawyer;
 
   const [showForm, setShowForm] = useState(false);
   const [evidenceType, setEvidenceType] = useState("documentary");
@@ -157,6 +169,10 @@ export default function EvidencePanel({
               onReject={() => handleStatusUpdate(ev.id, "rejected")}
               isSubmitting={isSubmitting}
               error={reviewingId === ev.id ? error : ""}
+              issues={issues}
+              canTagIssues={canTagIssues}
+              onLinkIssue={(issueId) => linkToIssue(ev.id, issueId)}
+              onUnlinkIssue={(linkId) => unlinkFromIssue(linkId)}
             />
           ))}
         </div>
@@ -270,6 +286,10 @@ function EvidenceCard({
   onReject,
   isSubmitting,
   error,
+  issues,
+  canTagIssues,
+  onLinkIssue,
+  onUnlinkIssue,
 }: {
   evidence: EvidenceRecordWithRelations;
   isJudge: boolean;
@@ -284,7 +304,37 @@ function EvidenceCard({
   onReject: () => void;
   isSubmitting: boolean;
   error: string;
+  issues: CaseIssue[];
+  canTagIssues: boolean;
+  onLinkIssue: (issueId: string) => Promise<{ error: string | null }>;
+  onUnlinkIssue: (linkId: string) => Promise<{ error: string | null }>;
 }) {
+  const [showIssuePicker, setShowIssuePicker] = useState(false);
+  const [selectedIssueId, setSelectedIssueId] = useState("");
+  const [tagError, setTagError] = useState("");
+
+  const links = evidence.issue_links ?? [];
+  const linkedIssueIds = new Set(links.map((l) => l.issue_id));
+  const availableIssues = issues.filter((i) => !linkedIssueIds.has(i.id));
+
+  const handleLink = async () => {
+    if (!selectedIssueId) return;
+    setTagError("");
+    const result = await onLinkIssue(selectedIssueId);
+    if (result.error) {
+      setTagError(result.error);
+    } else {
+      setSelectedIssueId("");
+      setShowIssuePicker(false);
+    }
+  };
+
+  const handleUnlink = async (linkId: string) => {
+    setTagError("");
+    const result = await onUnlinkIssue(linkId);
+    if (result.error) setTagError(result.error);
+  };
+
   return (
     <div className="rounded-lg border border-border p-3">
       <div className="flex items-center justify-between">
@@ -333,6 +383,108 @@ function EvidenceCard({
           </p>
         </div>
       )}
+
+      {/* Linked issues */}
+      <div className="mt-3 border-t border-border pt-3">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-medium text-muted">
+            <Link2 className="mr-1 inline h-3 w-3" />
+            Linked Issues ({links.length})
+          </p>
+          {canTagIssues && issues.length > 0 && !showIssuePicker && (
+            <button
+              type="button"
+              onClick={() => setShowIssuePicker(true)}
+              className="text-xs text-primary hover:underline"
+            >
+              + Tag Issue
+            </button>
+          )}
+        </div>
+
+        {links.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {links.map((link) => (
+              <span
+                key={link.id}
+                className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-1 text-xs text-primary"
+              >
+                <Tag className="h-3 w-3" />
+                Issue #{link.issue?.issue_number ?? "?"}
+                {link.issue?.issue_text && (
+                  <span
+                    className="max-w-[200px] truncate text-muted"
+                    title={link.issue.issue_text}
+                  >
+                    · {link.issue.issue_text}
+                  </span>
+                )}
+                {canTagIssues && (
+                  <button
+                    type="button"
+                    onClick={() => handleUnlink(link.id)}
+                    className="ml-1 rounded-full p-0.5 hover:bg-primary/20"
+                    aria-label="Remove tag"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {canTagIssues && issues.length === 0 && (
+          <p className="mt-1 text-xs text-muted">
+            No issues framed yet — tag evidence after issues are framed.
+          </p>
+        )}
+
+        {showIssuePicker && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <select
+              value={selectedIssueId}
+              onChange={(e) => setSelectedIssueId(e.target.value)}
+              className="flex-1 rounded-lg border border-border bg-cream-light px-2 py-1 text-xs focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              <option value="">Select an issue…</option>
+              {availableIssues.map((i) => (
+                <option key={i.id} value={i.id}>
+                  #{i.issue_number} — {i.issue_text.slice(0, 80)}
+                  {i.issue_text.length > 80 ? "…" : ""}
+                </option>
+              ))}
+            </select>
+            <Button
+              size="sm"
+              onClick={handleLink}
+              disabled={!selectedIssueId || availableIssues.length === 0}
+            >
+              Link
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setShowIssuePicker(false);
+                setSelectedIssueId("");
+                setTagError("");
+              }}
+            >
+              Cancel
+            </Button>
+            {availableIssues.length === 0 && (
+              <span className="text-xs text-muted">
+                All issues already tagged.
+              </span>
+            )}
+          </div>
+        )}
+
+        {tagError && (
+          <p className="mt-1 text-xs text-danger">{tagError}</p>
+        )}
+      </div>
 
       {/* Judge can review submitted evidence */}
       {isJudge && evidence.status === "submitted" && !isReviewing && (

@@ -15,9 +15,16 @@ import InvestigationPanel from "@/components/features/criminal/InvestigationPane
 import EvidencePanel from "@/components/features/trial/EvidencePanel";
 import WitnessPanel from "@/components/features/trial/WitnessPanel";
 import JudgmentPanel from "@/components/features/trial/JudgmentPanel";
+import DecreePanel from "@/components/features/trial/DecreePanel";
+import AppealPanel from "@/components/features/trial/AppealPanel";
+import ExecutionPanel from "@/components/features/trial/ExecutionPanel";
+import { useDecree } from "@/hooks/useDecree";
+import { useJudgment } from "@/hooks/useJudgment";
 import DocumentList from "@/components/features/documents/DocumentList";
 import UploadDocumentModal from "@/components/features/documents/UploadDocumentModal";
 import JudgeDrafts from "@/components/features/cases/JudgeDrafts";
+import IssueFraming from "@/components/features/cases/IssueFraming";
+import { useCaseIssues } from "@/hooks/useCaseIssues";
 import { createClient } from "@/lib/supabase/client";
 import { useCase, useCases } from "@/hooks/useCases";
 import { useHearings } from "@/hooks/useHearings";
@@ -51,7 +58,7 @@ import {
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
-type Tab = "overview" | "documents" | "parties" | "hearings" | "scrutiny" | "bail" | "investigation" | "evidence" | "witnesses" | "judgment" | "timeline" | "my_drafts";
+type Tab = "overview" | "documents" | "parties" | "hearings" | "scrutiny" | "bail" | "investigation" | "issues" | "evidence" | "witnesses" | "judgment" | "decree" | "appeals" | "execution" | "timeline" | "my_drafts";
 
 export default function CaseDetailPage({
   params,
@@ -64,13 +71,21 @@ export default function CaseDetailPage({
   const { caseData, documents, isLoading, refreshCase } = useCase(caseId);
   const { submitToAdmin, startDrafting, issueSummon, updateCaseStatus, submitChallan, uploadDocument, deleteDocument, getDocumentUrl, withdrawCase } = useCases();
   const { requests: docRequests, createRequest: createDocRequest, fulfillRequest: fulfillDocRequest } = useDocumentRequests(caseId);
-  const { hearings, assignJudge } = useHearings(caseId);
+  const { hearings, assignJudge, assignStenographer } = useHearings(caseId);
+  const { issues } = useCaseIssues(caseId);
+  const { judgment } = useJudgment(caseId);
+  const { decree } = useDecree(caseId);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [showAssignJudgeDialog, setShowAssignJudgeDialog] = useState(false);
   const [judgeList, setJudgeList] = useState<{ id: string; full_name: string; email: string }[]>([]);
   const [selectedJudgeId, setSelectedJudgeId] = useState("");
   const [assignJudgeLoading, setAssignJudgeLoading] = useState(false);
   const [assignJudgeError, setAssignJudgeError] = useState("");
+  const [showAssignStenoDialog, setShowAssignStenoDialog] = useState(false);
+  const [stenoList, setStenoList] = useState<{ id: string; full_name: string; email: string }[]>([]);
+  const [selectedStenoId, setSelectedStenoId] = useState("");
+  const [assignStenoLoading, setAssignStenoLoading] = useState(false);
+  const [assignStenoError, setAssignStenoError] = useState("");
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [actionError, setActionError] = useState("");
   const [showSummonDialog, setShowSummonDialog] = useState(false);
@@ -148,6 +163,25 @@ export default function CaseDetailPage({
     "reserved_for_judgment", "judgment_delivered", "closed",
   ].includes(status);
 
+  // Show issues tab once the case reaches preliminary hearing. Stays visible
+  // through trial and judgment so findings can be recorded and read.
+  const showIssuesTab = [
+    "preliminary_hearing", "issues_framed", "transferred_to_trial",
+    "evidence_stage", "arguments", "reserved_for_judgment",
+    "judgment_delivered", "closed", "disposed",
+  ].includes(status);
+
+  const showDecreeTab = [
+    "judgment_delivered", "closed", "disposed",
+  ].includes(status);
+
+  const showAppealTab = [
+    "judgment_delivered", "closed", "disposed",
+  ].includes(status);
+
+  const showExecutionTab =
+    !!decree && ["signed", "executed", "pending_execution", "satisfied"].includes(decree.status);
+
   const tabs: { id: Tab; label: string }[] = [
     { id: "overview", label: "Overview" },
     { id: "documents", label: `Documents (${documents.length})` },
@@ -155,10 +189,14 @@ export default function CaseDetailPage({
     ...(isCriminalCase ? [{ id: "bail" as Tab, label: "Bail" }] : []),
     ...(isCriminalCase ? [{ id: "investigation" as Tab, label: "Investigation" }] : []),
     ...(showHearingsTab ? [{ id: "hearings" as Tab, label: `Hearings (${hearings.length})` }] : []),
+    ...(showIssuesTab ? [{ id: "issues" as Tab, label: `Issues (${issues.length})` }] : []),
     ...(showScrutinyTab ? [{ id: "scrutiny" as Tab, label: "Scrutiny" }] : []),
     ...(showTrialTabs ? [{ id: "evidence" as Tab, label: "Evidence" }] : []),
     ...(showTrialTabs ? [{ id: "witnesses" as Tab, label: "Witnesses" }] : []),
     ...(showTrialTabs ? [{ id: "judgment" as Tab, label: "Judgment" }] : []),
+    ...(showDecreeTab ? [{ id: "decree" as Tab, label: "Decree" }] : []),
+    ...(showAppealTab ? [{ id: "appeals" as Tab, label: "Appeals" }] : []),
+    ...(showExecutionTab ? [{ id: "execution" as Tab, label: "Execution" }] : []),
     { id: "timeline", label: "Timeline" },
     ...((isMagistrate || isTrialJudge) ? [{ id: "my_drafts" as Tab, label: "My Drafts" }] : []),
   ];
@@ -360,6 +398,29 @@ export default function CaseDetailPage({
               </Button>
             )}
 
+            {/* Admin Court / Trial Judge: Assign Stenographer */}
+            {isCourtOfficial && ["registered", "summon_issued", "preliminary_hearing", "issues_framed", "transferred_to_trial", "evidence_stage", "arguments"].includes(status) && (
+              <Button
+                size="sm"
+                variant={caseData.stenographer_id ? "outline" : "warning"}
+                onClick={async () => {
+                  setAssignStenoError("");
+                  setSelectedStenoId(caseData.stenographer_id ?? "");
+                  const supabase = createClient();
+                  const { data } = await supabase
+                    .from("profiles")
+                    .select("id, full_name, email")
+                    .eq("role", "stenographer")
+                    .order("full_name");
+                  setStenoList(data ?? []);
+                  setShowAssignStenoDialog(true);
+                }}
+              >
+                <MessageSquareText className="h-4 w-4" />
+                {caseData.stenographer_id ? "Change Stenographer" : "Assign Stenographer"}
+              </Button>
+            )}
+
             {/* Admin Court: Advance through statuses */}
             {isCourtOfficial && status === "summon_issued" && (
               <Button
@@ -380,12 +441,29 @@ export default function CaseDetailPage({
                 size="sm"
                 variant="primary"
                 isLoading={isActionLoading}
-                onClick={() =>
-                  handleAction(() => updateCaseStatus(caseId, "issues_framed", status))
+                disabled={issues.length === 0}
+                title={
+                  issues.length === 0
+                    ? "Record at least one issue in the Issues tab first"
+                    : undefined
                 }
+                onClick={() => {
+                  if (issues.length === 0) {
+                    setActionError(
+                      "Frame at least one issue in the Issues tab before advancing."
+                    );
+                    setActiveTab("issues");
+                    return;
+                  }
+                  handleAction(() =>
+                    updateCaseStatus(caseId, "issues_framed", status)
+                  );
+                }}
               >
                 <ArrowRightCircle className="h-4 w-4" />
-                Frame Issues
+                {issues.length === 0
+                  ? "Frame Issues (0 recorded)"
+                  : `Finalise Issues (${issues.length})`}
               </Button>
             )}
 
@@ -669,6 +747,21 @@ export default function CaseDetailPage({
                       <p className="text-xs text-muted">{caseData.trial_judge.email}</p>
                     )}
                     <Badge variant="success" className="mt-1">Active</Badge>
+                  </Card>
+                )}
+
+                {caseData.stenographer_id && (
+                  <Card padding="sm">
+                    <h4 className="mb-2 text-sm font-semibold text-primary">
+                      <MessageSquareText className="mr-1 inline h-4 w-4" />
+                      Stenographer
+                    </h4>
+                    <p className="text-sm text-foreground">
+                      {caseData.stenographer?.full_name ?? "Assigned"}
+                    </p>
+                    {caseData.stenographer?.email && (
+                      <p className="text-xs text-muted">{caseData.stenographer.email}</p>
+                    )}
                   </Card>
                 )}
               </div>
@@ -1111,6 +1204,93 @@ export default function CaseDetailPage({
             />
           )}
 
+          {activeTab === "decree" && showDecreeTab && (
+            <DecreePanel
+              caseId={caseData.id}
+              caseStatus={status}
+              canDraw={!!isCourtOfficial}
+              judgmentId={judgment?.id ?? null}
+              parties={{
+                plaintiff: caseData.plaintiff
+                  ? {
+                      id: caseData.plaintiff.id,
+                      full_name: caseData.plaintiff.full_name,
+                    }
+                  : null,
+                defendant: caseData.defendant
+                  ? {
+                      id: caseData.defendant.id,
+                      full_name: caseData.defendant.full_name,
+                    }
+                  : null,
+              }}
+            />
+          )}
+
+          {activeTab === "appeals" && showAppealTab && (
+            <AppealPanel
+              caseId={caseData.id}
+              caseStatus={status}
+              currentUserId={user?.id ?? null}
+              isCourtOfficial={!!isCourtOfficial}
+              judgmentDate={judgment?.delivery_date ?? null}
+              judgmentId={judgment?.id ?? null}
+              decreeId={decree?.id ?? null}
+              parties={{
+                plaintiff: caseData.plaintiff
+                  ? {
+                      id: caseData.plaintiff.id,
+                      full_name: caseData.plaintiff.full_name,
+                    }
+                  : null,
+                defendant: caseData.defendant
+                  ? {
+                      id: caseData.defendant.id,
+                      full_name: caseData.defendant.full_name,
+                    }
+                  : null,
+              }}
+            />
+          )}
+
+          {activeTab === "execution" && showExecutionTab && decree && (
+            <ExecutionPanel
+              caseId={caseData.id}
+              currentUserId={user?.id ?? null}
+              isCourtOfficial={!!isCourtOfficial}
+              decree={{
+                id: decree.id,
+                status: decree.status,
+                decree_holder_id: decree.decree_holder_id,
+                judgment_debtor_id: decree.judgment_debtor_id,
+                amount_awarded: decree.amount_awarded,
+              }}
+              parties={{
+                plaintiff: caseData.plaintiff
+                  ? {
+                      id: caseData.plaintiff.id,
+                      full_name: caseData.plaintiff.full_name,
+                    }
+                  : null,
+                defendant: caseData.defendant
+                  ? {
+                      id: caseData.defendant.id,
+                      full_name: caseData.defendant.full_name,
+                    }
+                  : null,
+              }}
+            />
+          )}
+
+          {activeTab === "issues" && showIssuesTab && (
+            <IssueFraming
+              caseId={caseData.id}
+              caseStatus={status}
+              canFrame={!!isCourtOfficial}
+              canDecide={!!(isTrialJudge || user?.role === "admin_court")}
+            />
+          )}
+
           {activeTab === "scrutiny" && (
             <ScrutinyChecklistComponent
               caseId={caseData.id}
@@ -1337,6 +1517,75 @@ export default function CaseDetailPage({
                 }}
               >
                 Assign Judge
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assign Stenographer Dialog */}
+      {showAssignStenoDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="mx-4 w-full max-w-md rounded-xl border border-border bg-white p-6 shadow-xl">
+            <h3 className="mb-4 text-lg font-semibold text-primary">Assign Stenographer</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium">Select Stenographer</label>
+                <select
+                  className="w-full rounded-lg border border-border bg-cream-light px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  value={selectedStenoId}
+                  onChange={(e) => setSelectedStenoId(e.target.value)}
+                >
+                  <option value="">— Select a stenographer —</option>
+                  {stenoList.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.full_name} ({s.email})
+                    </option>
+                  ))}
+                </select>
+                {stenoList.length === 0 && (
+                  <p className="mt-1 text-xs text-muted">No stenographers found.</p>
+                )}
+              </div>
+              {caseData.stenographer_id && (
+                <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  This case already has a stenographer assigned. Selecting a new one will replace the current assignment.
+                </p>
+              )}
+            </div>
+            {assignStenoError && (
+              <div className="mt-3 rounded-lg border border-danger bg-danger-light p-2 text-sm text-danger">
+                {assignStenoError}
+              </div>
+            )}
+            <div className="mt-6 flex justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowAssignStenoDialog(false);
+                  setAssignStenoError("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                isLoading={assignStenoLoading}
+                disabled={!selectedStenoId}
+                onClick={async () => {
+                  setAssignStenoLoading(true);
+                  setAssignStenoError("");
+                  const result = await assignStenographer(selectedStenoId);
+                  setAssignStenoLoading(false);
+                  if (result.error) {
+                    setAssignStenoError(result.error);
+                  } else {
+                    setShowAssignStenoDialog(false);
+                    await refreshCase();
+                  }
+                }}
+              >
+                Assign Stenographer
               </Button>
             </div>
           </div>

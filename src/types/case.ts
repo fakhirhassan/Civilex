@@ -50,6 +50,7 @@ export interface CaseWithRelations extends Case {
   plaintiff?: { id: string; full_name: string; email: string } | null;
   defendant?: { id: string; full_name: string; email: string } | null;
   trial_judge?: { id: string; full_name: string; email: string } | null;
+  stenographer?: { id: string; full_name: string; email: string } | null;
   assignments?: CaseAssignment[];
   criminal_details?: CriminalCaseDetails | null;
 }

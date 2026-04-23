@@ -8,7 +8,10 @@ import Button from "@/components/ui/Button";
 import Spinner from "@/components/ui/Spinner";
 import ProceedingsEditor from "@/components/features/hearings/ProceedingsEditor";
 import OrderSheetForm from "@/components/features/hearings/OrderSheetForm";
+import TranscriptEditor from "@/components/features/hearings/TranscriptEditor";
+import AdjournmentPanel from "@/components/features/hearings/AdjournmentPanel";
 import { useHearings } from "@/hooks/useHearings";
+import { useCase } from "@/hooks/useCases";
 import { useAuth } from "@/hooks/useAuth";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import {
@@ -44,6 +47,7 @@ export default function HearingDetailPage({
 }) {
   const { caseId, hearingId } = use(params);
   const { user } = useAuth();
+  const { caseData } = useCase(caseId);
   const {
     hearings,
     isLoading,
@@ -61,8 +65,16 @@ export default function HearingDetailPage({
 
   const isCourtOfficial = user && ["admin_court", "magistrate", "trial_judge"].includes(user.role);
   const isStenographer = user?.role === "stenographer";
+  const isAssignedStenographer =
+    isStenographer && caseData?.stenographer_id === user?.id;
   const canEditProceedings = isStenographer || isCourtOfficial;
   const canIssueOrders = isCourtOfficial;
+  // Transcript: the assigned stenographer can edit & sign; court officials can edit draft but not sign.
+  const canEditTranscript = !!(isAssignedStenographer || isCourtOfficial);
+  const canSignTranscript = !!isAssignedStenographer;
+  // Reader-style actions: the assigned steno (acting as reader/ahlmad) and
+  // court officials can call cases, adjourn hearings, and set next dates.
+  const canManageHearing = !!(isCourtOfficial || isAssignedStenographer);
 
   if (isLoading) {
     return (
@@ -178,8 +190,9 @@ export default function HearingDetailPage({
             </div>
           </div>
 
-          {/* Status actions for court officials */}
-          {isCourtOfficial && (
+          {/* Status actions — available to court officials and the assigned
+              stenographer (who acts as reader/ahlmad in our app). */}
+          {canManageHearing && (
             <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-4">
               {hearing.status === "scheduled" && (
                 <Button
@@ -189,44 +202,46 @@ export default function HearingDetailPage({
                   isLoading={isUpdating}
                 >
                   <Play className="h-4 w-4" />
-                  Start Hearing
+                  Call Case
                 </Button>
               )}
               {hearing.status === "in_progress" && (
-                <>
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    onClick={() => handleStatusChange("completed")}
-                    isLoading={isUpdating}
-                  >
-                    <CheckCircle2 className="h-4 w-4" />
-                    Mark Completed
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleStatusChange("adjourned")}
-                    isLoading={isUpdating}
-                  >
-                    <PauseCircle className="h-4 w-4" />
-                    Adjourn
-                  </Button>
-                </>
-              )}
-              {hearing.status !== "cancelled" && hearing.status !== "completed" && (
                 <Button
                   size="sm"
-                  variant="danger"
-                  onClick={() => handleStatusChange("cancelled")}
+                  variant="primary"
+                  onClick={() => handleStatusChange("completed")}
                   isLoading={isUpdating}
                 >
-                  Cancel Hearing
+                  <CheckCircle2 className="h-4 w-4" />
+                  Mark Completed
                 </Button>
               )}
+              {/* Only court officials can outright cancel a hearing. */}
+              {isCourtOfficial &&
+                hearing.status !== "cancelled" &&
+                hearing.status !== "completed" && (
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    onClick={() => handleStatusChange("cancelled")}
+                    isLoading={isUpdating}
+                  >
+                    Cancel Hearing
+                  </Button>
+                )}
             </div>
           )}
         </Card>
+
+        {/* Verbatim transcript (stenographer) */}
+        <div className="mt-6">
+          <TranscriptEditor
+            hearingId={hearingId}
+            caseId={caseId}
+            canEdit={canEditTranscript}
+            canSign={canSignTranscript}
+          />
+        </div>
 
         <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
           {/* Proceedings */}
@@ -284,8 +299,19 @@ export default function HearingDetailPage({
           />
         </div>
 
+        {/* Adjournments (reader/steno + court officials) */}
+        {(canManageHearing || hearing.status === "adjourned") && (
+          <div className="mt-6">
+            <AdjournmentPanel
+              hearingId={hearingId}
+              caseId={caseId}
+              canAdjourn={canManageHearing}
+            />
+          </div>
+        )}
+
         {/* Next hearing date */}
-        {isCourtOfficial && (hearing.status === "completed" || hearing.status === "adjourned") && (
+        {canManageHearing && (hearing.status === "completed" || hearing.status === "adjourned") && (
           <Card className="mt-6">
             <h4 className="mb-3 text-base font-semibold text-primary">
               Schedule Next Hearing

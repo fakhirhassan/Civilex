@@ -31,7 +31,16 @@ export function useEvidence(caseId: string) {
         .select(
           `*,
           submitted_by_profile:profiles!submitted_by(full_name),
-          document:documents!document_id(title, file_name, file_path)`
+          document:documents!document_id(title, file_name, file_path),
+          issue_links:evidence_issue_links(
+            id,
+            evidence_id,
+            issue_id,
+            case_id,
+            tagged_by,
+            created_at,
+            issue:case_issues!issue_id(id, issue_number, issue_text)
+          )`
         )
         .eq("case_id", caseId)
         .order("created_at", { ascending: true });
@@ -141,11 +150,60 @@ export function useEvidence(caseId: string) {
     [caseId, fetchEvidence]
   );
 
+  const linkToIssue = useCallback(
+    async (evidenceId: string, issueId: string) => {
+      try {
+        const supabase = createClient();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) return { error: "Not authenticated" };
+
+        const { error } = await supabase.from("evidence_issue_links").insert({
+          evidence_id: evidenceId,
+          issue_id: issueId,
+          case_id: caseId,
+          tagged_by: user.id,
+        });
+
+        if (error) return { error: error.message };
+
+        await fetchEvidence();
+        return { error: null };
+      } catch {
+        return { error: "Failed to link evidence to issue" };
+      }
+    },
+    [caseId, fetchEvidence]
+  );
+
+  const unlinkFromIssue = useCallback(
+    async (linkId: string) => {
+      try {
+        const supabase = createClient();
+        const { error } = await supabase
+          .from("evidence_issue_links")
+          .delete()
+          .eq("id", linkId);
+
+        if (error) return { error: error.message };
+
+        await fetchEvidence();
+        return { error: null };
+      } catch {
+        return { error: "Failed to unlink evidence from issue" };
+      }
+    },
+    [fetchEvidence]
+  );
+
   return {
     evidence,
     isLoading,
     submitEvidence,
     updateEvidenceStatus,
+    linkToIssue,
+    unlinkFromIssue,
     fetchEvidence,
   };
 }

@@ -108,6 +108,7 @@ export default function SettingsPage() {
                 label="Full Name"
                 placeholder="Your Name"
                 value={formData.full_name}
+                error={fieldErrors.fullName}
                 onChange={(e) =>
                   setFormData({ ...formData, full_name: e.target.value })
                 }

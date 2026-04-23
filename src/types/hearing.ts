@@ -108,6 +108,93 @@ export const ORDER_TYPE_LABELS: Record<OrderType, string> = {
   miscellaneous: "Miscellaneous",
 };
 
+export type AdjournmentReason =
+  | "party_absent"
+  | "counsel_unavailable"
+  | "document_pending"
+  | "court_busy"
+  | "judge_absent"
+  | "witness_absent"
+  | "other";
+
+export interface HearingAdjournment {
+  id: string;
+  hearing_id: string;
+  case_id: string;
+  reason: AdjournmentReason;
+  reason_text: string | null;
+  cost_imposed: number;
+  next_date: string | null;
+  adjourned_by: string | null;
+  created_at: string;
+  adjourner?: { id: string; full_name: string } | null;
+}
+
+export const ADJOURNMENT_REASON_LABELS: Record<AdjournmentReason, string> = {
+  party_absent: "Party Absent",
+  counsel_unavailable: "Counsel Unavailable",
+  document_pending: "Document Pending",
+  court_busy: "Court Busy",
+  judge_absent: "Judge Absent",
+  witness_absent: "Witness Absent",
+  other: "Other",
+};
+
+export type TranscriptStatus = "draft" | "signed";
+
+export interface HearingTranscript {
+  id: string;
+  hearing_id: string;
+  case_id: string;
+  stenographer_id: string | null;
+  transcript_text: string;
+  status: TranscriptStatus;
+  signed_at: string | null;
+  word_count: number;
+  created_at: string;
+  updated_at: string;
+  stenographer?: {
+    id: string;
+    full_name: string;
+    email: string;
+  } | null;
+}
+
+export type IssueType = "fact" | "law" | "mixed";
+export type IssueFinding = "affirmative" | "negative" | "partly" | "not_pressed";
+
+export interface CaseIssue {
+  id: string;
+  case_id: string;
+  issue_number: number;
+  issue_text: string;
+  issue_type: IssueType;
+  burden_of_proof: string | null;
+  finding: IssueFinding | null;
+  finding_text: string | null;
+  framed_by: string | null;
+  framed_at: string | null;
+  decided_by: string | null;
+  decided_at: string | null;
+  created_at: string;
+  updated_at: string;
+  framer?: { id: string; full_name: string } | null;
+  decider?: { id: string; full_name: string } | null;
+}
+
+export const ISSUE_TYPE_LABELS: Record<IssueType, string> = {
+  fact: "Issue of Fact",
+  law: "Issue of Law",
+  mixed: "Mixed (Fact & Law)",
+};
+
+export const ISSUE_FINDING_LABELS: Record<IssueFinding, string> = {
+  affirmative: "Answered in Affirmative",
+  negative: "Answered in Negative",
+  partly: "Partly Affirmative",
+  not_pressed: "Not Pressed",
+};
+
 export const SCRUTINY_CHECKS = [
   { key: "proper_documentation" as const, label: "Proper Documentation", description: "All required documents are attached and complete" },
   { key: "court_fees_paid" as const, label: "Court Fees Paid", description: "Court filing fees have been paid" },

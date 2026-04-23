@@ -10,6 +10,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useCases } from "@/hooks/useCases";
 import { usePayments } from "@/hooks/usePayments";
 import { useNotifications } from "@/hooks/useNotifications";
+import { useStenographerWorkload } from "@/hooks/useStenographerWorkload";
 import { ROLE_LABELS, CASE_STATUS_LABELS } from "@/lib/constants";
 import type { CaseStatus } from "@/lib/constants";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -29,6 +30,9 @@ import {
   Users,
   Bot,
   Shield,
+  Lock,
+  PenLine,
+  MapPin,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -38,6 +42,7 @@ export default function DashboardPage() {
   const { cases, isLoading: casesLoading, fetchCases, acceptCase, declineCase } = useCases();
   const { payments, isLoading: paymentsLoading } = usePayments();
   const { notifications, unreadCount } = useNotifications();
+  const { rows: stenoRows } = useStenographerWorkload();
   const router = useRouter();
 
   const handleSignOut = async () => {
@@ -166,6 +171,35 @@ export default function DashboardPage() {
         color: "text-primary",
         bg: "bg-primary/10",
         href: "/cases",
+      });
+    } else if (role === "stenographer") {
+      const todayCount = stenoRows.filter((r) => {
+        const d = new Date(r.hearing.scheduled_date);
+        const t = new Date();
+        return (
+          d.getFullYear() === t.getFullYear() &&
+          d.getMonth() === t.getMonth() &&
+          d.getDate() === t.getDate()
+        );
+      }).length;
+      const pendingTranscripts = stenoRows.filter(
+        (r) => r.hearing.status === "completed" && (!r.transcript || r.transcript.status === "draft")
+      ).length;
+      base.push({
+        label: "Hearings Today",
+        value: todayCount.toString(),
+        icon: Calendar,
+        color: "text-info",
+        bg: "bg-blue-50",
+        href: "/stenographer/today",
+      });
+      base.push({
+        label: "Pending Transcripts",
+        value: pendingTranscripts.toString(),
+        icon: PenLine,
+        color: "text-amber-600",
+        bg: "bg-amber-50",
+        href: "/stenographer/transcripts",
       });
     } else {
       base.push({
@@ -425,6 +459,92 @@ export default function DashboardPage() {
                 </Card>
               )}
 
+            {/* Stenographer: Today's Hearings */}
+            {role === "stenographer" && (
+              <Card>
+                <div className="mb-4 flex items-center justify-between">
+                  <h3 className="flex items-center gap-2 text-lg font-semibold text-primary">
+                    <Calendar className="h-5 w-5" />
+                    Today&apos;s Hearings
+                  </h3>
+                  <Link href="/stenographer/today">
+                    <Button variant="ghost" size="sm">
+                      View All
+                    </Button>
+                  </Link>
+                </div>
+                {(() => {
+                  const today = new Date();
+                  const todayHearings = stenoRows
+                    .filter((r) => {
+                      const d = new Date(r.hearing.scheduled_date);
+                      return (
+                        d.getFullYear() === today.getFullYear() &&
+                        d.getMonth() === today.getMonth() &&
+                        d.getDate() === today.getDate()
+                      );
+                    })
+                    .sort(
+                      (a, b) =>
+                        new Date(a.hearing.scheduled_date).getTime() -
+                        new Date(b.hearing.scheduled_date).getTime()
+                    );
+
+                  if (todayHearings.length === 0) {
+                    return (
+                      <p className="text-sm text-muted">
+                        No hearings scheduled for today on your assigned cases.
+                      </p>
+                    );
+                  }
+
+                  return (
+                    <div className="space-y-3">
+                      {todayHearings.slice(0, 5).map(({ hearing, transcript }) => (
+                        <Link
+                          key={hearing.id}
+                          href={`/cases/${hearing.case_id}/hearings/${hearing.id}`}
+                          className="flex items-center justify-between rounded-lg border border-border p-3 transition-colors hover:bg-cream-dark/50"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                              <FileText className="h-5 w-5 text-primary" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-foreground">
+                                {hearing.case?.title}
+                              </p>
+                              <p className="text-xs text-muted">
+                                {hearing.case?.case_number} · Hearing #
+                                {hearing.hearing_number}
+                                {hearing.courtroom && (
+                                  <>
+                                    {" · "}
+                                    <MapPin className="inline h-3 w-3" />{" "}
+                                    {hearing.courtroom}
+                                  </>
+                                )}
+                              </p>
+                            </div>
+                          </div>
+                          {transcript?.status === "signed" ? (
+                            <Badge variant="success">
+                              <Lock className="mr-1 inline h-3 w-3" />
+                              Signed
+                            </Badge>
+                          ) : transcript ? (
+                            <Badge variant="warning">Draft</Badge>
+                          ) : (
+                            <Badge variant="default">Pending</Badge>
+                          )}
+                        </Link>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </Card>
+            )}
+
             {/* Trial Judge: Active Trial Cases */}
             {role === "trial_judge" && trialCases.length > 0 && (
               <Card>
@@ -603,12 +723,20 @@ export default function DashboardPage() {
                   </Link>
                 )}
                 {role === "stenographer" && (
-                  <Link href="/cases" className="block">
-                    <Button variant="primary" className="w-full justify-start">
-                      <FileText className="h-4 w-4" />
-                      View Cases
-                    </Button>
-                  </Link>
+                  <>
+                    <Link href="/stenographer/today" className="block">
+                      <Button variant="primary" className="w-full justify-start">
+                        <Calendar className="h-4 w-4" />
+                        Today&apos;s Hearings
+                      </Button>
+                    </Link>
+                    <Link href="/stenographer/transcripts" className="block">
+                      <Button variant="outline" className="w-full justify-start">
+                        <FileText className="h-4 w-4" />
+                        Transcripts
+                      </Button>
+                    </Link>
+                  </>
                 )}
                 <Link href="/notifications" className="block">
                   <Button variant="ghost" className="w-full justify-start">
