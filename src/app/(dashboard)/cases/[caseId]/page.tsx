@@ -25,6 +25,7 @@ import UploadDocumentModal from "@/components/features/documents/UploadDocumentM
 import JudgeDrafts from "@/components/features/cases/JudgeDrafts";
 import IssueFraming from "@/components/features/cases/IssueFraming";
 import SummonsPanel from "@/components/features/cases/SummonsPanel";
+import PlaintDraftPanel from "@/components/features/cases/PlaintDraftPanel";
 import { useCaseIssues } from "@/hooks/useCaseIssues";
 import { createClient } from "@/lib/supabase/client";
 import { useCase, useCases } from "@/hooks/useCases";
@@ -339,18 +340,7 @@ export default function CaseDetailPage({
               </Button>
             )}
 
-            {/* Lawyer: Submit to Admin Court */}
-            {isLawyer && ["drafting", "returned_for_revision"].includes(status) && (
-              <Button
-                size="sm"
-                variant="primary"
-                isLoading={isActionLoading}
-                onClick={() => handleAction(() => submitToAdmin(caseId))}
-              >
-                <Send className="h-4 w-4" />
-                Submit to Admin Court
-              </Button>
-            )}
+            {/* Lawyer: Submit to Admin Court — handled by PlaintDraftPanel below */}
 
             {/* Admin Court: Begin Scrutiny */}
             {isCourtOfficial && status === "submitted_to_admin" && (
@@ -660,6 +650,19 @@ export default function CaseDetailPage({
                   onChanged={refreshCase}
                 />
               )}
+
+              {isLawyer &&
+                ["drafting", "returned_for_revision", "submitted_to_admin", "under_scrutiny"].includes(status) && (
+                  <PlaintDraftPanel
+                    caseId={caseId}
+                    caseStatus={status}
+                    onSubmitted={async () => {
+                      // Move case status to submitted_to_admin once draft is sent
+                      await submitToAdmin(caseId);
+                      await refreshCase();
+                    }}
+                  />
+                )}
 
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
               {/* Description */}

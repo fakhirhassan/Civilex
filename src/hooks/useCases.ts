@@ -583,6 +583,26 @@ export function useCases() {
     try {
       const supabase = createClient();
 
+      // A submitted plaint draft must exist before the case can move to scrutiny.
+      const { data: draftRow } = await supabase
+        .from("case_drafts")
+        .select("id, status")
+        .eq("case_id", caseId)
+        .maybeSingle();
+
+      if (!draftRow) {
+        return {
+          error:
+            "No plaint draft exists for this case. Compose the plaint in the Draft panel before submitting.",
+        };
+      }
+      if (draftRow.status === "in_progress") {
+        return {
+          error:
+            "The plaint draft has not been submitted yet. Click 'Submit to Admin Court' inside the Draft panel.",
+        };
+      }
+
       const { error } = await supabase
         .from("cases")
         .update({ status: "submitted_to_admin" })

@@ -12,10 +12,12 @@ import { registerSchema } from "@/lib/validations/auth";
 import { ROLE_LABELS, type Role } from "@/lib/constants";
 import { Eye, EyeOff } from "lucide-react";
 
-const roleOptions = Object.entries(ROLE_LABELS).map(([value, label]) => ({
-  value,
-  label,
-}));
+const roleOptions = Object.entries(ROLE_LABELS)
+  .filter(([value]) => value !== "magistrate")
+  .map(([value, label]) => ({
+    value,
+    label,
+  }));
 
 const specializationOptions = [
   { value: "civil", label: "Civil Law" },

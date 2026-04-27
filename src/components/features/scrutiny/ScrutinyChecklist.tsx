@@ -5,9 +5,11 @@ import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
 import { useScrutiny } from "@/hooks/useScrutiny";
+import { usePlaintDraft } from "@/hooks/usePlaintDraft";
 import { SCRUTINY_CHECKS } from "@/types/hearing";
 import type { ScrutinyDecision } from "@/types/hearing";
-import { CheckCircle2, XCircle, AlertCircle, FileCheck } from "lucide-react";
+import PlaintPreview from "@/components/features/cases/PlaintPreview";
+import { CheckCircle2, XCircle, AlertCircle, FileCheck, FileText } from "lucide-react";
 
 interface ScrutinyChecklistProps {
   caseId: string;
@@ -25,6 +27,7 @@ export default function ScrutinyChecklistComponent({
   onComplete,
 }: ScrutinyChecklistProps) {
   const { checklist, isLoading, submitScrutiny } = useScrutiny(caseId);
+  const { draft } = usePlaintDraft(caseId);
 
   const [checks, setChecks] = useState<Record<CheckKey, boolean>>({
     proper_documentation: false,
@@ -91,6 +94,16 @@ export default function ScrutinyChecklistComponent({
   // Read-only view for completed scrutiny
   if (!showForm && checklist) {
     return (
+      <div className="space-y-4">
+        {draft && (
+          <Card>
+            <div className="mb-3 flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" />
+              <h3 className="text-lg font-semibold text-primary">Plaint Draft</h3>
+            </div>
+            <PlaintPreview draft={draft} />
+          </Card>
+        )}
       <Card>
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-semibold text-primary">
@@ -146,12 +159,24 @@ export default function ScrutinyChecklistComponent({
           </p>
         )}
       </Card>
+      </div>
     );
   }
 
   // Editable form
   return (
-    <Card>
+    <div className="space-y-4">
+      {draft && (
+        <Card>
+          <div className="mb-3 flex items-center gap-2">
+            <FileText className="h-5 w-5 text-primary" />
+            <h3 className="text-lg font-semibold text-primary">Plaint Draft</h3>
+          </div>
+          <PlaintPreview draft={draft} />
+        </Card>
+      )}
+
+      <Card>
       <div className="mb-4">
         <h3 className="text-lg font-semibold text-primary">
           <FileCheck className="mr-2 inline h-5 w-5" />
@@ -236,5 +261,6 @@ export default function ScrutinyChecklistComponent({
         </Button>
       </div>
     </Card>
+    </div>
   );
 }
