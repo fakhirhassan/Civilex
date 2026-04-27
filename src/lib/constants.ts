@@ -173,6 +173,7 @@ export const SIDEBAR_NAV = {
     { label: "Dashboard", href: "/dashboard", icon: "LayoutDashboard" },
     { label: "Cases", href: "/cases", icon: "Briefcase" },
     { label: "Lawyers", href: "/lawyers", icon: "Users" },
+    { label: "Claim Summon", href: "/summon/claim", icon: "Gavel" },
     { label: "Payments", href: "/payments", icon: "CreditCard" },
     { label: "Notifications", href: "/notifications", icon: "Bell" },
     { label: "Settings", href: "/settings", icon: "Settings" },

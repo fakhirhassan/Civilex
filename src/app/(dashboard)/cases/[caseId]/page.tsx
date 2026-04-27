@@ -24,6 +24,7 @@ import DocumentList from "@/components/features/documents/DocumentList";
 import UploadDocumentModal from "@/components/features/documents/UploadDocumentModal";
 import JudgeDrafts from "@/components/features/cases/JudgeDrafts";
 import IssueFraming from "@/components/features/cases/IssueFraming";
+import SummonsPanel from "@/components/features/cases/SummonsPanel";
 import { useCaseIssues } from "@/hooks/useCaseIssues";
 import { createClient } from "@/lib/supabase/client";
 import { useCase, useCases } from "@/hooks/useCases";
@@ -93,7 +94,7 @@ export default function CaseDetailPage({
   const [docRequestForm, setDocRequestForm] = useState({ requested_from: "", document_type: "written_statement", title: "", description: "" });
   const [docRequestLoading, setDocRequestLoading] = useState(false);
   const [docRequestError, setDocRequestError] = useState("");
-  const [summonResult, setSummonResult] = useState<{ defendant_name: string; defendant_email: string | null; email_sent: boolean; notification_sent: boolean; register_url: string } | null>(null);
+  const [summonResult, setSummonResult] = useState<{ defendant_name: string; defendant_email: string | null; email_sent: boolean; notification_sent: boolean; register_url: string; summon_code?: string; summon_number?: number; attempts_remaining?: number } | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showWithdrawDialog, setShowWithdrawDialog] = useState(false);
   const [isWithdrawing, setIsWithdrawing] = useState(false);
@@ -648,7 +649,19 @@ export default function CaseDetailPage({
         {/* Tab content */}
         <div className="mt-6">
           {activeTab === "overview" && (
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <div className="space-y-6">
+              {["summon_issued", "disposed"].includes(status) && (
+                <SummonsPanel
+                  caseId={caseId}
+                  caseStatus={status}
+                  isCourtOfficial={!!isCourtOfficial}
+                  defendantClaimed={!!caseData.defendant_id}
+                  onReissue={() => setShowSummonDialog(true)}
+                  onChanged={refreshCase}
+                />
+              )}
+
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
               {/* Description */}
               <Card className="lg:col-span-2">
                 <h3 className="mb-3 text-lg font-semibold text-primary">
@@ -875,6 +888,7 @@ export default function CaseDetailPage({
                     </dl>
                   </Card>
                 )}
+              </div>
             </div>
           )}
 
@@ -1604,7 +1618,7 @@ export default function CaseDetailPage({
                 <div className="space-y-3 text-sm">
                   <div className="rounded-lg bg-green-50 border border-green-200 p-3">
                     <p className="font-medium text-green-800">
-                      Summon sent to {summonResult.defendant_name}
+                      Summon #{summonResult.summon_number ?? 1} sent to {summonResult.defendant_name}
                     </p>
                     <ul className="mt-2 space-y-1 text-green-700">
                       {summonResult.defendant_email && (
@@ -1612,8 +1626,22 @@ export default function CaseDetailPage({
                       )}
                       <li>In-app notification: {summonResult.notification_sent ? "Sent" : "Pending registration"}</li>
                       <li>Registration link: {summonResult.register_url}</li>
+                      {typeof summonResult.attempts_remaining === "number" && (
+                        <li>Attempts remaining: <strong>{summonResult.attempts_remaining}</strong></li>
+                      )}
                     </ul>
                   </div>
+                  {summonResult.summon_code && (
+                    <div className="rounded-lg border border-primary bg-primary/5 p-3">
+                      <p className="text-xs uppercase tracking-wide text-muted">Summon Code</p>
+                      <p className="mt-1 font-mono text-2xl font-bold tracking-widest text-primary">
+                        {summonResult.summon_code}
+                      </p>
+                      <p className="mt-1 text-xs text-muted">
+                        The defendant can paste this code at /summon/claim after registering.
+                      </p>
+                    </div>
+                  )}
                   {!summonResult.notification_sent && (
                     <p className="text-muted">
                       The defendant has not registered on the platform yet. They will receive the in-app notification once they create an account and are linked to this case.

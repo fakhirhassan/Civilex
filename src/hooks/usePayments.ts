@@ -132,11 +132,24 @@ export function usePayments() {
 
       // If no more pending payments, transition case status
       if (!pendingPayments || pendingPayments.length === 0) {
-        await supabase
+        const { data: confirmed, error: confirmErr } = await supabase
           .from("cases")
           .update({ status: "payment_confirmed" })
           .eq("id", caseId)
-          .eq("status", "payment_pending");
+          .eq("status", "payment_pending")
+          .select("id")
+          .maybeSingle();
+
+        if (confirmErr) {
+          console.error("Error confirming case payment status:", confirmErr);
+          return { error: confirmErr.message };
+        }
+        if (!confirmed) {
+          return {
+            error:
+              "Payment recorded, but the case status could not be advanced. Please refresh — if this persists contact court support.",
+          };
+        }
 
         // Log activity
         await supabase.from("case_activity_log").insert({

@@ -38,9 +38,8 @@ const defendantFields = {
     .or(z.literal("")),
   defendant_email: z
     .string()
-    .email("Invalid email address")
-    .optional()
-    .or(z.literal("")),
+    .min(1, "Defendant email is required so the court can serve summons")
+    .email("Invalid email address"),
   defendant_address: z
     .string()
     .optional(),

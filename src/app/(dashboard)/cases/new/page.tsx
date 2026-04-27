@@ -192,7 +192,7 @@ function NewCaseForm() {
       lawyer_id: selectedLawyerId || undefined,
       ...plaintiff,
       defendant_name: defendant.defendant_name,
-      defendant_email: defendant.defendant_email || undefined,
+      defendant_email: defendant.defendant_email,
       defendant_phone: defendant.defendant_phone || undefined,
       defendant_cnic: defendant.defendant_cnic || undefined,
       defendant_address: defendant.defendant_address || undefined,
@@ -390,12 +390,13 @@ function NewCaseForm() {
               />
               <Input
                 id="defendant_email"
-                label="Email Address (Optional)"
+                label="Email Address"
                 type="email"
                 placeholder="defendant@example.com"
                 value={defendant.defendant_email}
                 onChange={(e) => setD("defendant_email", e.target.value)}
                 error={errors.defendant_email}
+                required
               />
               <div className="md:col-span-2">
                 <Input
